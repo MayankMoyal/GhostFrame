@@ -43,9 +43,9 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
 
     image = pipe(
         prompt=prompt,
-        height=576,
-        width=1024,
-        num_inference_steps=6,
+        height=1072,
+        width=1920,
+        num_inference_steps=8,
         guidance_scale=0.0,
     ).images[0]
 
