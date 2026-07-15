@@ -13,6 +13,9 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from engine.zimage_turbo import generate_image, load_pipeline
+from agent.router import run_agent
+from agent.rewriter import get_rewritten_prompt
+from agent.safety import UnsafePromptError, check_safety
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -92,8 +95,20 @@ async def generate(payload: GenerationRequest):
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
 
+    # Agent step: every prompt (typed or, later, voice) passes through the
+    # local Phi-3 agent first for rewriting + safety check + style/anchor
+    # tagging. Runs in a threadpool since it's a blocking HTTP call to Ollama.
+    agent_result = await run_in_threadpool(run_agent, payload.prompt)
+
+    try:
+        check_safety(agent_result)
+    except UnsafePromptError as exc:
+        raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
+
+    rewritten_prompt = get_rewritten_prompt(agent_result, payload.prompt)
+
     output_path = create_output_path()
-    final_prompt = build_prompt(payload.prompt, payload.style)
+    final_prompt = build_prompt(rewritten_prompt, payload.style)
 
     def run_generation():
         with pipeline_lock:
@@ -114,6 +129,13 @@ async def generate(payload: GenerationRequest):
         "status": "success",
         "filename": output_path.name,
         "metrics": metrics,
+        "agent": {
+            "original_prompt": payload.prompt,
+            "final_prompt": final_prompt,
+            "style_detected": agent_result.get("style", ""),
+            "anchor_type": agent_result.get("anchor_type", "background"),
+            "agent_ok": agent_result.get("agent_ok", False),
+        },
     }
 
 
