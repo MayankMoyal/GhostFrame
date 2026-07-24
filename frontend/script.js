@@ -1,4 +1,4 @@
-const BACKEND_BASE_URL = "https://8000-01kwc2kesrrzxr5h45zgh9ztr4.cloudspaces.litng.ai";
+const BACKEND_BASE_URL = "https://8000-01kxjmptp1jet0sfm9ptdz6xr7.cloudspaces.litng.ai";
 
 function updateClock() {
     const now = new Date();

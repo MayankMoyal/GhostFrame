@@ -1,32 +1,18 @@
 """
-Agent client — MODEL: qwen3:4b-instruct-2507 (Alibaba Qwen3, 4B, ~2.5GB via Ollama)
+Agent client — MODEL: phi3 (Microsoft Phi-3-mini, 3.8B, ~3.9GB via Ollama)
 
-Candidate replacement for Phi-3 (client_1.py). Smaller footprint
-(~3.2GB actual VRAM per `ollama ps`, vs Phi-3's ~3.8-3.9GB) and a newer
-model generation.
-
-Verified standalone via direct Ollama calls (agent alone, Z-Image
-pipeline not loaded):
-  - JSON output was well-formed and complete on both test prompts, with
-    richer/more detailed rewrites than Phi-3 produced on the same kind
-    of prompt.
-  - style/anchor_type fields came back contextually correct (e.g.
-    detected "cyberpunk" style from a cyberpunk prompt, not just a
-    default).
-  - Warm-state latency: ~1.4s total, ~1.0s eval for ~80 output tokens.
-    (First call after a fresh pull took ~80s -- that's one-time model
-    load cost, not representative of steady-state latency.)
-  - `ollama ps` showed 100% GPU with no CPU split, standalone.
-
-NOT YET verified: behavior with the Z-Image pipeline also loaded and
-holding ~17GB VRAM at the same time -- that's the real test, since
-that's the scenario that caused Phi-3 to split across CPU/GPU
-originally. Re-check `ollama ps` after running this through the actual
-/generate endpoint before trusting this in production.
+This is the ORIGINAL agent model. Kept as client_1.py so it can be
+A/B tested against client_2.py (Qwen3-4B-Instruct-2507).
 
 To use this model: rename this file to client.py (agent/router.py
-imports `from agent.client import call_agent`, so the active model is
-whichever file is currently named client.py).
+imports `from agent.client import call_agent`, so the active model
+is whichever file is currently named client.py).
+
+Known issue with this model: at 3.9GB, it doesn't always fit fully on
+GPU alongside the Z-Image pipeline -- if free VRAM drops below ~3.9GB,
+Ollama silently splits it across CPU/GPU, which showed up as a 17.5s
+delay to evaluate a single 10-token prompt in testing. Run `ollama ps`
+after a call to confirm it's at "100% GPU", not a CPU/GPU split.
 """
 
 import json
@@ -34,7 +20,7 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen3:4b-instruct-2507-q4_K_M"
+MODEL_NAME = "phi3"
 
 SYSTEM_PROMPT = """You are an assistant embedded in a live AI image-generation pipeline for a livestreamer's OBS background.
 Given the user's raw prompt, respond with ONLY a single JSON object, no other text, using exactly these keys:

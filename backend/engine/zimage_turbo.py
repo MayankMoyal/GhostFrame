@@ -30,14 +30,21 @@ def load_pipeline():
 
     print(f"[DIAGNOSTIC] VRAM allocated right after loading to GPU: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
 
-    print("Compiling transformer with torch.compile (this makes the FIRST run slow, one-time cost)...")
-    pipe.transformer = torch.compile(pipe.transformer, mode="default")
+    # DISABLED for now (Option A) -- recompiling on every request because
+    # the Phi-3/Qwen agent rewrites each prompt to a different length,
+    # which changes the text-encoder output shape feeding the transformer's
+    # cross-attention -> shape mismatch -> full recompile per call
+    # (measured 5-10 min/generation with this on). Revisit as an isolated
+    # experiment (Option B: pad/truncate the tokenizer to a fixed length
+    # so the shape never changes, then re-enable).
+    # print("Compiling transformer with torch.compile (this makes the FIRST run slow, one-time cost)...")
+    # pipe.transformer = torch.compile(pipe.transformer, mode="default")
 
     print("Running throwaway warmup generation...")
     pipe(
         prompt="a simple black square",
-        height=720,
-        width=1280,
+        height=576,
+        width=1024,
         num_inference_steps=6,
         guidance_scale=0.0,
     )
@@ -54,8 +61,8 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
 
     image = pipe(
         prompt=prompt,
-        height=720,
-        width=1280,
+        height=576,
+        width=1024,
         num_inference_steps=9,
         guidance_scale=0.0,
     ).images[0]

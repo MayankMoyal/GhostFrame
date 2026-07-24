@@ -96,8 +96,11 @@ async def generate(payload: GenerationRequest):
         raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
 
     # Agent step: every prompt (typed or, later, voice) passes through the
-    # local Phi-3 agent first for rewriting + safety check + style/anchor
-    # tagging. Runs in a threadpool since it's a blocking HTTP call to Ollama.
+    # local agent first for rewriting + safety check + style/anchor
+    # tagging. Which model runs here is whatever agent/client.py currently
+    # points to (see agent/README.md) -- Phi-3 and Qwen3-4B-Instruct-2507
+    # are both drop-in candidates. Runs in a threadpool since it's a
+    # blocking HTTP call to Ollama.
     agent_result = await run_in_threadpool(run_agent, payload.prompt)
 
     try:

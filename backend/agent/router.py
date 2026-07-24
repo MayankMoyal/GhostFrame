@@ -1,4 +1,3 @@
-
 from agent.client import call_agent
 
 DEFAULT_RESULT = {
@@ -12,8 +11,10 @@ DEFAULT_RESULT = {
 
 def run_agent(user_prompt: str) -> dict:
     """
-    Single entry point for the agent layer. Calls the local Phi-3 model
-    once via Ollama and returns a normalized dict with all agent fields.
+    Single entry point for the agent layer. Calls the local Ollama model
+    (whichever one is currently active in agent/client.py -- see
+    agent/README.md) once and returns a normalized dict with all agent
+    fields.
 
     If the agent call fails for ANY reason (Ollama down, bad JSON, model
     not pulled, timeout, etc.), this falls back to safe defaults using
