@@ -35,7 +35,7 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen3.5:4b"
+MODEL_NAME = "qwen3:4b"
 
 SYSTEM_PROMPT = """You are an assistant embedded in a live AI image-generation pipeline for a livestreamer's OBS background.
 Given the user's raw prompt, respond with ONLY a single JSON object, no other text, using exactly these keys:
@@ -54,7 +54,7 @@ Rules:
 - Output valid JSON only. No markdown, no code fences, no explanation text."""
 
 
-def call_agent(user_prompt: str, timeout: int = 15) -> dict:
+def call_agent(user_prompt: str, timeout: int = 60) -> dict:
     """
     Sends the user's prompt to the local Ollama model and returns the
     parsed JSON response as a dict.
@@ -63,7 +63,7 @@ def call_agent(user_prompt: str, timeout: int = 15) -> dict:
     ValueError if the model did not return valid JSON. Callers should
     catch these and fall back gracefully (see agent/router.py).
     """
-    full_prompt = f'{SYSTEM_PROMPT}\n\nUser prompt: "{user_prompt}"'
+    full_prompt = f'{SYSTEM_PROMPT}\n\nUser prompt: "{user_prompt}" /no_think /no_think'
 
     response = requests.post(
         OLLAMA_URL,
