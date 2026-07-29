@@ -1,0 +1,39 @@
+# ============================================================
+# GhostFrame — Project Dependencies
+# ============================================================
+# Install everything:  pip install -r requirements.txt
+# ============================================================
+
+# --- Server ---
+fastapi
+uvicorn
+python-multipart
+
+# --- Image Generation (Z-Image-Turbo) ---
+torch
+diffusers
+accelerate
+transformers
+torchao
+
+# --- Speech-to-Text (faster-whisper) ---
+faster-whisper
+
+# --- AI Agent / Prompt Rewriter (Ollama client) ---
+requests
+
+# --- Pose Overlay (MediaPipe) ---
+mediapipe
+opencv-python
+
+# --- Post-Processing (Background Removal) ---
+rembg
+Pillow
+
+# --- General ---
+numpy
+psutil
+
+# --- Testing / Dev (mic recording for STT tests) ---
+sounddevice
+soundfile

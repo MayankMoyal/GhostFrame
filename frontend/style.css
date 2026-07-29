@@ -403,53 +403,6 @@ nav a:hover{
 }
 
 
-#generate{
-
-    width:100%;
-
-    height:50px;
-
-    margin-top:25px;
-
-    border:none;
-
-    border-radius:10px;
-
-    background:linear-gradient(90deg,#6C4BFF,#4A86FF);
-
-    color:white;
-
-    font-size:16px;
-
-    font-weight:600;
-
-    cursor:pointer;
-
-    transition:.3s;
-
-}
-
-#generate:hover{
-
-    transform:translateY(-2px);
-
-    box-shadow:0 0 20px rgba(108,75,255,.4);
-
-}
-
-#generate:disabled{
-
-    cursor:not-allowed;
-
-    opacity:.65;
-
-    transform:none;
-
-    box-shadow:none;
-
-}
-
-
 .middle-section{
 
     display:flex;

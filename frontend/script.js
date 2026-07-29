@@ -1,4 +1,5 @@
-const BACKEND_BASE_URL = "https://8000-01kxjmptp1jet0sfm9ptdz6xr7.cloudspaces.litng.ai";
+// Default to localhost if opening the file directly, else use the host
+const BACKEND_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
 
 function updateClock() {
     const now = new Date();
@@ -126,44 +127,33 @@ function resetPipeline() {
     setPipelineStep("step5", "Ready");
 }
 
-async function generateImage() {
-    const generateBtn = document.getElementById("generate");
-    const promptInput = document.getElementById("prompt");
+async function sendVoicePrompt(audioBlob) {
     const styleSelect = document.getElementById("style");
-
-    const prompt = promptInput.value.trim();
     const style = styleSelect.value.trim();
 
-    if (!prompt) {
-        setText("analysis", "Prompt cannot be empty.");
-        setPreviewError("Please enter an image prompt before generating.");
-        return;
-    }
-
-    generateBtn.textContent = "Generating...";
-    generateBtn.disabled = true;
-
-    setText("analysis", "Processing");
+    setText("analysis", "Processing Audio");
     setText("sceneType", "Detecting");
     setText("imageStyle", style || "-");
     setText("lighting", "Analyzing");
     setText("timeEstimate", "Running");
     setText("vramUsage", "Measuring");
 
-    setPipelineStep("step1", "Prompt received", true);
-    setPipelineStep("step2", "Z-Image-Turbo loaded", true);
+    setPipelineStep("step1", "Audio received", true);
+    setPipelineStep("step2", "Transcribing & Loading Model", true);
     setPipelineStep("step3", "Running inference", true);
     setPipelineStep("step4", "Rendering image", true);
     setPipelineStep("step5", "Waiting for output");
-    setPreviewLoading("Generating image...");
+    setPreviewLoading("Generating image from voice...");
 
     try {
-        const response = await fetch(`${BACKEND_BASE_URL}/generate`, {
+        const formData = new FormData();
+        formData.append("audio", audioBlob, "voice_prompt.webm");
+        formData.append("style", style);
+        formData.append("remove_bg", "true");
+
+        const response = await fetch(`${BACKEND_BASE_URL}/generate-voice`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ prompt, style }),
+            body: formData,
         });
 
         const data = await response.json().catch(() => ({}));
@@ -176,12 +166,18 @@ async function generateImage() {
             throw new Error("The backend did not return an output filename.");
         }
 
-        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
-        setPreviewImage(imageUrl, prompt);
-        addToRecentGenerations(imageUrl, prompt);
+        // The API returns the transcript, we can show it
+        const promptText = data.transcript || "Voice Prompt";
 
-        setText("analysis", "Completed");
-        setText("sceneType", "Generated image");
+        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename_nobg || data.filename}`;
+        setPreviewImage(imageUrl, promptText);
+        addToRecentGenerations(imageUrl, promptText);
+
+        // Reset mic status to ready after image is shown
+        micStatus.textContent = "Ready";
+        micStatus.style.color = "#4ADE80"; // green
+        setText("analysis", `Transcript: "${promptText}"`);
+        setText("sceneType", `Anchor: ${data.agent?.anchor_type || "background"}`);
         setText("lighting", "Turbo guidance");
         setText(
             "timeEstimate",
@@ -193,23 +189,98 @@ async function generateImage() {
         );
 
         setPipelineStep("step4", "Image rendered", true);
-        setPipelineStep("step5", "Ready", true);
+        setPipelineStep("step5", "Sent to OBS Overlay", true);
     } catch (error) {
         setText("analysis", error.message);
         setPipelineStep("step5", "Error");
         setPreviewError(error.message);
-    } finally {
-        generateBtn.textContent = "Generate Image";
-        generateBtn.disabled = false;
     }
 }
+
+// === MEDIA RECORDER LOGIC ===
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
+const micBtn = document.getElementById("micBtn");
+const micStatus = document.getElementById("micStatus");
+
+async function setupAudio() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Try webm first, fallback to standard
+        const options = MediaRecorder.isTypeSupported('audio/webm') 
+            ? { mimeType: 'audio/webm' } 
+            : undefined;
+            
+        mediaRecorder = new MediaRecorder(stream, options);
+        
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) audioChunks.push(event.data);
+        };
+        
+        mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            sendVoicePrompt(audioBlob);
+            audioChunks = [];
+        };
+    } catch (err) {
+        console.error("Microphone access denied:", err);
+        micStatus.textContent = "Microphone access denied!";
+        micStatus.style.color = "red";
+    }
+}
+
+function startRecording() {
+    if (!mediaRecorder || isRecording) return;
+    isRecording = true;
+    audioChunks = [];
+    mediaRecorder.start();
+    
+    micBtn.style.background = "#ef4444"; // red
+    micBtn.textContent = "🎙️ Recording... Release to send";
+    micStatus.textContent = "Listening...";
+}
+
+function stopRecording() {
+    if (!mediaRecorder || !isRecording) return;
+    isRecording = false;
+    mediaRecorder.stop();
+    
+    micBtn.style.background = "#3b82f6"; // blue
+    micBtn.textContent = "🎤 Hold Space or Click to Speak";
+    micStatus.textContent = "Processing...";
+}
+
+// Request permissions immediately
+setupAudio();
+
+// Mouse events
+micBtn.addEventListener("mousedown", startRecording);
+micBtn.addEventListener("mouseup", stopRecording);
+micBtn.addEventListener("mouseleave", stopRecording); // if drag out
+
+// Keyboard events (Spacebar)
+window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && !e.repeat && document.activeElement !== document.getElementById('style')) {
+        e.preventDefault();
+        startRecording();
+    }
+});
+window.addEventListener("keyup", (e) => {
+    if (e.code === "Space") {
+        stopRecording();
+    }
+});
 
 updateClock();
 setInterval(updateClock, 1000);
 resetPipeline();
 
-document.getElementById("generate").addEventListener("click", generateImage);
-document.getElementById("clearPreview").addEventListener("click", resetPreview);
+document.getElementById("clearPreview").addEventListener("click", () => {
+    resetPreview();
+    // Also tell backend to clear OBS overlays
+    fetch(`${BACKEND_BASE_URL}/clear-props`, { method: "POST" }).catch(console.error);
+});
 
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebarToggle");

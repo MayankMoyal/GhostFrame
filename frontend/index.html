@@ -46,11 +46,13 @@
                             Describe your imagination and let GhostFrame bring it to life.
                         </p>
 
-                        <label for="prompt">Image Prompt</label>
-                        <textarea
-                            id="prompt"
-                            placeholder="Describe the image you want to generate...
-Example: A futuristic cyberpunk city at sunset with neon lights, flying cars and cinematic lighting."></textarea>
+                        <label>Voice Prompt (Push to Talk)</label>
+                        <div style="text-align: center; margin: 20px 0;">
+                            <button id="micBtn" style="padding: 20px 40px; font-size: 20px; border-radius: 50px; cursor: pointer; background: #3b82f6; color: white; border: none; width: 100%; transition: background 0.2s;">
+                                🎤 Hold Space or Click to Speak
+                            </button>
+                            <p id="micStatus" style="margin-top: 10px; color: #9ca3af; font-weight: 500;">Ready</p>
+                        </div>
 
                         <div class="options-row">
                             <div class="option">
@@ -81,7 +83,7 @@ Example: A futuristic cyberpunk city at sunset with neon lights, flying cars and
                             </div>
                         </div>
 
-                        <button id="generate">Generate Image</button>
+                        <!-- Voice button replaces the generate button -->
                     </div>
 
                     <div class="preview-card">

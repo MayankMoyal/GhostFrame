@@ -1,8 +1,3 @@
-fastapi
-uvicorn
-torch
-diffusers
-accelerate
-transformers
-requests
-torchao
+# Backend dependencies are managed in the project root requirements.txt
+# Install from project root:  pip install -r requirements.txt
+-r ../requirements.txt
