@@ -71,6 +71,7 @@ def load_pipeline():
     # .to("cpu") a bnb 4-bit module later, it isn't supported the way a
     # normal fp16 module is (this is why we're not manually offloading it).
     pipe.to("cuda")
+    pipe.vae.to(torch.float32)  # Fix black images (VAE fp16 NaN issue)
 
     print(f"[DIAGNOSTIC] VRAM allocated right after loading to GPU: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
 
