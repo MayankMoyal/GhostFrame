@@ -8,7 +8,7 @@ from transformers import AutoModel, BitsAndBytesConfig as TransformersBitsAndByt
 
 GGUF_TRANSFORMER_PATH = os.environ.get(
     "ZIMAGE_GGUF_PATH",
-    "./models/gguf/z_image_turbo-Q5_K_M.gguf",
+    "./models/gguf/z_image_turbo-Q8_0.gguf",
 )
 
 def load_pipeline():
