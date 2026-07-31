@@ -1,4 +1,41 @@
-# Backend dependencies are managed in the project root requirements.txt
-# Install from project root:  pip install -r requirements.txt
--r ../requirements.txt
-websockets
+
+# Server
+fastapi
+uvicorn
+python-multipart
+
+# Image Generation (Z-Image-Turbo)
+torch
+diffusers
+accelerate
+transformers
+torchao
+
+# Speech-to-Text
+faster-whisper
+
+# Agent & General API
+requests
+Pillow
+psutil
+
+# Background Removal (Rembg)
+rembg
+onnxruntime
+
+
+# Vision Engine & Pose Tracking
+opencv-python
+numpy
+mediapipe
+
+# OBS Integration
+pyvirtualcam
+
+# Local Bridge API
+fastapi
+uvicorn
+requests
+
+# Voice Trigger Microphone Input
+pyaudio
