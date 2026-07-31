@@ -111,16 +111,23 @@ async def push_prop_to_local_engine(filename: str, anchor_type: str):
     import requests as req
     try:
         image_url = f"{CLOUD_API_URL}/outputs/{filename}"
+
+        # Route to the correct endpoint based on anchor type
+        if anchor_type == "background":
+            endpoint = f"{LOCAL_API_URL}/equip-background"
+        else:
+            endpoint = f"{LOCAL_API_URL}/equip"
+
         resp = await run_in_threadpool(
             req.post,
-            f"{LOCAL_API_URL}/equip",
+            endpoint,
             json={"image_url": image_url, "anchor_type": anchor_type},
             timeout=10,
         )
         if resp.ok:
-            print(f"[Event-Driven] Prop pushed to Local Engine: {filename}")
+            print(f"[Event-Driven] {'Background' if anchor_type == 'background' else 'Prop'} pushed to Local Engine: {filename}")
         else:
-            print(f"[Event-Driven] Local Engine rejected prop: {resp.status_code}")
+            print(f"[Event-Driven] Local Engine rejected: {resp.status_code}")
     except Exception as exc:
         print(f"[Event-Driven] Could not reach Local Engine: {exc}")
 
