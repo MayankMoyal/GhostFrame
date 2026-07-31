@@ -1,0 +1,12 @@
+# Ignore large model files
+models/
+*.gguf
+
+# Ignore generated outputs and logs
+outputs/
+ollama.log
+*.png
+
+# Ignore Python cache
+__pycache__/
+*.pyc

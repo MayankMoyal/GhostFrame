@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostFrame</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+<div class="container">
+    <aside class="sidebar" id="sidebar">
+        <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+        <div class="logo">
+            <div class="logo-icon">GF</div>
+            <h2>GHOSTFRAME</h2>
+            <p>AI Image Generation Platform</p>
+        </div>
+
+        <nav>
+            <a href="#" class="active">Studio</a>
+            <a href="#">Gallery</a>
+            <a href="#">History</a>
+            <a href="#">Settings</a>
+        </nav>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <h2>GhostFrame</h2>
+            <div class="datetime">
+                <span id="date"></span>
+                <span id="time"></span>
+            </div>
+        </header>
+
+        <section class="content">
+            <div class="workspace">
+                <div class="top-section">
+                    <div class="prompt-card">
+                        <h1>Transform Ideas into Images</h1>
+
+                        <p class="subtitle">
+                            Describe your imagination and let GhostFrame bring it to life.
+                        </p>
+
+                        <label for="prompt">Image Prompt</label>
+                        <textarea
+                            id="prompt"
+                            placeholder="Describe the image you want to generate...
+Example: A futuristic cyberpunk city at sunset with neon lights, flying cars and cinematic lighting."></textarea>
+
+                        <div class="options-row">
+                            <div class="option">
+                                <label for="style">Visual Style</label>
+                                <select id="style">
+                                    <option>Cinematic</option>
+                                    <option>Photorealistic</option>
+                                    <option>Digital Art</option>
+                                    <option>Concept Art</option>
+                                    <option>Fantasy</option>
+                                    <option>Sci-Fi</option>
+                                    <option>Anime / Manga</option>
+                                    <option>Game Art</option>
+                                    <option>3D Render</option>
+                                    <option>Oil Painting</option>
+                                    <option>Sketch</option>
+                                    <option>Watercolor</option>
+                                    <option>Cyberpunk</option>
+                                    <option>Minimalist</option>
+                                </select>
+                            </div>
+
+                            <div class="option">
+                                <label for="model">Model</label>
+                                <select id="model">
+                                    <option>Z-Image-Turbo</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button id="generate">Generate Image</button>
+                    </div>
+
+                    <div class="preview-card">
+                        <div class="preview-header">
+                            <h3>Live Preview</h3>
+                            <button id="clearPreview">Clear</button>
+                        </div>
+
+                        <div class="preview-box">
+                            <div class="preview-placeholder">
+                                <p>No image generated yet</p>
+                                <span>Your generated image will appear here.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="middle-section">
+                    <div class="ai-card">
+                        <h3>AI Insights</h3>
+
+                        <div class="info">
+                            <p><strong>Prompt Analysis</strong></p>
+                            <span id="analysis">Waiting...</span>
+                        </div>
+
+                        <div class="info">
+                            <p><strong>Scene Type</strong></p>
+                            <span id="sceneType">-</span>
+                        </div>
+
+                        <div class="info">
+                            <p><strong>Image Style</strong></p>
+                            <span id="imageStyle">-</span>
+                        </div>
+
+                        <div class="info">
+                            <p><strong>Lighting</strong></p>
+                            <span id="lighting">-</span>
+                        </div>
+
+                        <div class="info">
+                            <p><strong>Estimated Time</strong></p>
+                            <span id="timeEstimate">-</span>
+                        </div>
+
+                        <div class="info">
+                            <p><strong>Peak VRAM</strong></p>
+                            <span id="vramUsage">-</span>
+                        </div>
+                    </div>
+
+                    <div class="pipeline-card">
+                        <h3>Generation Pipeline</h3>
+                        <div class="pipeline-step" id="step1">Waiting for prompt</div>
+                        <div class="pipeline-step" id="step2">Model ready</div>
+                        <div class="pipeline-step" id="step3">Idle</div>
+                        <div class="pipeline-step" id="step4">Image not rendered</div>
+                        <div class="pipeline-step" id="step5">Ready</div>
+                    </div>
+                </div>
+
+                <div class="bottom-section">
+                    <div class="recent-card">
+                        <div class="section-header">
+                            <h3>Recent Generations</h3>
+                            <a href="#">View All</a>
+                        </div>
+
+                        <div class="recent-images" id="recentImages">
+                            <p class="empty-gallery">No generations yet — your images will appear here.</p>
+                        </div>
+                    </div>
+
+                    <div class="activity-card">
+                        <div class="section-header">
+                            <h3>Recent Activity</h3>
+                        </div>
+
+                        <div class="activity-list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+
+</html>

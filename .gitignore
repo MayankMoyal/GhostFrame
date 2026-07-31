@@ -1,0 +1,19 @@
+# Python environment files
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Deep Learning weights and checkpoints (Crucial for keeping files local)
+*.pt
+*.pth
+*.bin
+*.safetensors
+.cache/
+models/checkpoint-*/
+
+# Operating system files
+.DS_Store
+Thumbs.db

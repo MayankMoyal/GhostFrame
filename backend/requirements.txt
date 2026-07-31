@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+torch
+diffusers
+accelerate
+transformers
+requests
+gguf
+bitsandbytes
+# Optional: for the ~10% faster GGUF CUDA kernels path, also install `kernels`
+# (requires GPU compute capability > 7.0). Not required for correctness.
+# kernels
