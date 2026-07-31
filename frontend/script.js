@@ -6,6 +6,27 @@
 const BACKEND_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
 const LOCAL_ENGINE_URL = 'http://localhost:8001';
 
+// ── Push to Local Engine (Browser-side relay) ────────────────────────────
+// Instead of relying on Cloud→Local reverse tunnel, the browser
+// (which is on the same machine as the Local Engine) forwards directly.
+async function pushToLocalEngine(filename, anchorType) {
+    const imageUrl = `${BACKEND_BASE_URL}/outputs/${filename}`;
+    const endpoint = anchorType === 'background'
+        ? `${LOCAL_ENGINE_URL}/equip-background`
+        : `${LOCAL_ENGINE_URL}/equip`;
+    try {
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: imageUrl, anchor_type: anchorType }),
+        });
+        const result = await resp.json();
+        console.log(`[Dashboard] Pushed ${anchorType} to Local Engine:`, result);
+    } catch (err) {
+        console.warn('[Dashboard] Could not reach Local Engine:', err);
+    }
+}
+
 // ── Utility Functions ────────────────────────────────────────────────────
 function updateClock() {
     const now = new Date();
@@ -192,6 +213,11 @@ async function generateImage() {
 
         setPipelineStep("step4", "Image rendered", true);
         setPipelineStep("step5", "Sent to OBS", true);
+
+        // Forward to Local Engine directly (no reverse tunnel needed)
+        const anchorType = data.agent?.anchor_type || 'background';
+        const pushFilename = data.filename_nobg || data.filename;
+        pushToLocalEngine(pushFilename, anchorType);
     } catch (error) {
         setText("analysis", error.message);
         setPipelineStep("step5", "Error");
@@ -257,6 +283,11 @@ async function sendVoicePrompt(audioBlob) {
 
         setPipelineStep("step4", "Image rendered", true);
         setPipelineStep("step5", "Sent to OBS Overlay", true);
+
+        // Forward to Local Engine directly (no reverse tunnel needed)
+        const anchorType = data.agent?.anchor_type || 'background';
+        const pushFilename = data.filename_nobg || data.filename;
+        pushToLocalEngine(pushFilename, anchorType);
     } catch (error) {
         setText("analysis", error.message);
         setPipelineStep("step5", "Error");
