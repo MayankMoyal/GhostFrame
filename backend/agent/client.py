@@ -13,8 +13,7 @@ Given the user's raw prompt, respond with ONLY a single JSON object, no other te
   "is_safe": true or false,
   "safety_reason": "short reason if is_safe is false, otherwise empty string",
   "style": "a short 1-2 word visual style tag, e.g. cyberpunk, fantasy, cozy, minimal",
-  "anchor_type": "one of: background, prop_in_hand, head_shoulder_accessory, ambient_floating",
-  "anchor_point": "one of: prop_in_hand, left_wrist, right_wrist, both_wrists, head, left_shoulder, right_shoulder, both_shoulders, ambient, background"
+  "anchor_type": "one of: background, hand_held, shield, head_wear, neck_wear, wrist_wear, ear_wear, face_wear, body_wear"
 }
 
 Rules:

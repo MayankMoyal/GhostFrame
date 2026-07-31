@@ -22,7 +22,6 @@ from engine.zimage_turbo import generate_image, load_pipeline
 from agent.router import run_agent
 from agent.rewriter import get_rewritten_prompt
 from agent.safety import UnsafePromptError, check_safety
-from overlay.pipeline import PoseAnchorPipeline
 from stt.transcriber import load_whisper_model, transcribe_audio
 from postprocess.background_remover import remove_background, load_rembg_session
 from postprocess.prop_alignment import align_prop
@@ -184,20 +183,7 @@ async def generate(payload: GenerationRequest):
             # accurate grip point (+ intrinsic tilt for held props) instead
             # of trusting overlay.js's static ZONE_GRIP fraction against a
             # padded canvas. Raises 500 if the crop is empty.
-            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_point", "background"))
-
-    # Broadcast new image to OBS overlay websockets (always, regardless of remove_bg)
-    broadcast_msg = {
-        "type": "new_prop",
-        "filename": nobg_filename if nobg_filename else output_path.name,
-        "anchor_type": agent_result.get("anchor_point", "background"),
-        **grip_fields,
-    }
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
+            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_type", "background"))
 
     return {
         "status": "success",
@@ -208,88 +194,12 @@ async def generate(payload: GenerationRequest):
             "original_prompt": payload.prompt,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
-            "anchor_type": agent_result.get("anchor_point", "background"),
+            "anchor_type": agent_result.get("anchor_type", "background"),
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
 
-connected_websockets = set()
-
-@app.websocket("/ws/anchor")
-async def anchor_stream(websocket: WebSocket, anchor_type: str = "both_shoulders"):
-    await websocket.accept()
-    connected_websockets.add(websocket)
-
-    pose_pipeline = PoseAnchorPipeline(anchor_type=anchor_type)
-    # Smart camera selection: try WEBCAM_INDEX first, then fallback to 0-4
-    preferred_index = WEBCAM_INDEX
-    indices_to_try = [preferred_index] + [i for i in range(5) if i != preferred_index]
-    
-    cap = None
-    webcam_ok = False
-    
-    for idx in indices_to_try:
-        temp_cap = cv2.VideoCapture(idx)
-        if temp_cap.isOpened():
-            # Verify we can actually read a frame (some virtual cameras open but fail to read)
-            ret, _ = temp_cap.read()
-            if ret:
-                cap = temp_cap
-                webcam_ok = True
-                print(f"[INFO] Successfully connected to webcam at index {idx}")
-                break
-        temp_cap.release()
-
-    if not webcam_ok:
-        print("[WARNING] Could not open ANY webcam for tracking! Poses will not update, but broadcasts will still work.")
-        # We don't close the websocket so that it can still receive new_prop broadcasts.
-
-    async def receive_control_messages():
-        """Listen for client messages (e.g. anchor_type switches) without
-        blocking the frame loop — runs concurrently as its own task."""
-        try:
-            while True:
-                raw = await websocket.receive_text()
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                new_type = msg.get("anchor_type")
-                if new_type:
-                    pose_pipeline.set_anchor_type(new_type)
-        except WebSocketDisconnect:
-            pass
-
-    control_task = asyncio.create_task(receive_control_messages())
-
-    try:
-        while True:
-            if websocket.client_state != WebSocketState.CONNECTED:
-                break
-
-            if not webcam_ok:
-                await asyncio.sleep(1.0)
-                continue
-
-            ret, frame = cap.read()
-            if not ret:
-                await asyncio.sleep(FRAME_INTERVAL_S)
-                continue
-
-            payload, _keypoints, _resolved, _mask = await asyncio.to_thread(
-                pose_pipeline.process_frame, frame
-            )
-
-            if payload is not None:
-                await websocket.send_json(payload)
-
-            await asyncio.sleep(FRAME_INTERVAL_S)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        connected_websockets.discard(websocket)
-        control_task.cancel()
-        cap.release()
+# WebSocket tracking removed (Cloud GPU cannot access local webcam)
 
 
 @app.post("/generate-voice")
@@ -369,20 +279,7 @@ async def generate_voice(
             print(f"[BG Removal] Warning — failed, returning original: {exc}")
 
         if nobg_filename:
-            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_point", "background"))
-
-    # 6. Broadcast the new prop to any active OBS Overlays
-    broadcast_msg = {
-        "type": "new_prop",
-        "filename": nobg_filename if nobg_filename else output_path.name,
-        "anchor_type": agent_result.get("anchor_point", "background"),
-        **grip_fields,
-    }
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
+            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_type", "background"))
 
     return {
         "status": "success",
@@ -394,7 +291,7 @@ async def generate_voice(
             "original_prompt": transcript,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
-            "anchor_type": agent_result.get("anchor_point", "background"),
+            "anchor_type": agent_result.get("anchor_type", "background"),
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
@@ -429,18 +326,6 @@ async def upload_prop(
         
     if nobg_filename:
         grip_fields = await _align_generated_prop(nobg_path, anchor_type)
-        
-    broadcast_msg = {
-        "type": "new_prop",
-        "filename": nobg_filename or output_path.name,
-        "anchor_type": anchor_type,
-        **grip_fields
-    }
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
 
     return {
         "filename": output_path.name,
@@ -451,12 +336,6 @@ async def upload_prop(
 @app.post("/clear-props")
 async def clear_props():
     """Clear all props from the active overlays."""
-    broadcast_msg = {"type": "new_prop", "action": "clear"}
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
     return {"status": "success"}
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"

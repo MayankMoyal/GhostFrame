@@ -173,6 +173,18 @@ async function sendVoicePrompt(audioBlob) {
         setPreviewImage(imageUrl, promptText);
         addToRecentGenerations(imageUrl, promptText);
 
+        // Tell the local Ghost Engine to equip it instantly
+        const anchorType = data.agent?.anchor_type || "background";
+        try {
+            await fetch("http://localhost:8001/equip", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: imageUrl, anchor_type: anchorType })
+            });
+        } catch (e) {
+            console.log("Local Ghost Engine is not running or unreachable.");
+        }
+
         // Reset mic status to ready after image is shown
         micStatus.textContent = "Ready";
         micStatus.style.color = "#4ADE80"; // green

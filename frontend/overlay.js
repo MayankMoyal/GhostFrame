@@ -62,8 +62,8 @@ const VIDEO_W = 640;
 const VIDEO_H = 480;
 
 function connectWebSocket() {
-    // Connect to the backend
-    ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/anchor`);
+    // Connect to the LOCAL ghost_engine bridge
+    ws = new WebSocket(`ws://localhost:8001/ws/anchor`);
 
     ws.onopen = () => {
         console.log("Overlay connected to WebSocket tracking stream");
