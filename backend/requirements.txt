@@ -1,1 +1,37 @@
-"" 
+# Ghost Stream — Cloud Backend Dependencies
+# Install: pip install -r requirements.txt
+
+# Web framework
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=12.0
+
+# Image generation (Z-Image-Turbo)
+torch>=2.0.0
+diffusers>=0.28.0
+accelerate>=0.25.0
+transformers>=4.38.0
+gguf
+bitsandbytes
+
+# Agent (Ollama client)
+requests>=2.31.0
+
+# Speech-to-Text
+faster-whisper>=0.10.0
+psutil>=5.9.0
+
+# Prop background removal
+rembg>=2.0.0
+Pillow>=10.0.0
+
+# Static file serving
+aiofiles>=23.0.0
+
+# ── Model Weight Downloads ──
+# After pip install, run the setup script:
+#   bash setup.sh
+# This will download:
+#   - Z-Image-Turbo GGUF weights (~7GB)
+#   - Ollama agent model (~3.4GB)
+#   - Whisper model (auto-downloaded on first use)

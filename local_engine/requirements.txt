@@ -1,0 +1,27 @@
+# Ghost Stream — Local Engine Dependencies
+# Install: pip install -r requirements.txt
+
+# Core vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+mediapipe>=0.10.0
+
+# Background removal (RVM)
+torch>=2.0.0
+
+# Prop preprocessing
+rembg>=2.0.0
+Pillow>=10.0.0
+
+# Local API server
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=12.0
+
+# ── Model Weight Downloads ──
+# After pip install, run this to download model weights:
+#   python download_models.py
+# Or manually download:
+#   RVM: https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_resnet50.pth
+#   Hand: https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+#   Pose: https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task

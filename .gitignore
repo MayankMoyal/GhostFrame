@@ -1,19 +1,39 @@
-# Python environment files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-.venv/
+*.egg-info/
+dist/
+build/
 venv/
-env/
+.venv/
+*.egg
 
-# Deep Learning weights and checkpoints (Crucial for keeping files local)
-*.pt
+# Model weights (download at runtime)
 *.pth
-*.bin
-*.safetensors
-.cache/
-models/checkpoint-*/
+*.pt
+*.task
+*.gguf
+models/
 
-# Operating system files
+# Generated outputs
+outputs/*.png
+outputs/*.jpg
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Temp
+tmp/
+*.log

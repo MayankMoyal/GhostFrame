@@ -1,110 +1,468 @@
+"""Ghost Stream — Unified Cloud Backend
+
+Merges:
+- Image generation (Z-Image-Turbo) from q8/backend
+- Voice STT (faster-whisper) from newver/stt
+- Agent routing (Ollama) from q8/backend/agent
+- OBS overlay WebSocket broadcasting
+- Event-driven prop hot-swap to Local Engine
+- Background removal (rembg) for generated props
+
+Endpoints:
+    GET  /health            — Server health check
+    POST /generate          — Text prompt → image generation
+    POST /generate-voice    — Audio blob → STT → image generation
+    POST /upload-prop       — Custom prop image upload
+    POST /clear-props       — Clear all props from OBS overlay
+    WS   /ws/anchor         — WebSocket for OBS overlay tracking + prop events
+    GET  /outputs/{file}    — Static file serving for generated images
+"""
+import asyncio
 import os
-import json
-import subprocess
-from fastapi import FastAPI, HTTPException
+import sys
+import tempfile
+import traceback
+from contextlib import asynccontextmanager
+from pathlib import Path
+from threading import Lock
+from time import time
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
-app = FastAPI(title="GhostFrame Engineering Engine")
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Enable CORS cross-origin requests so Swati's frontend files can run safely from any local server context
+from engine.zimage_turbo import generate_image, load_pipeline
+from agent.router import run_agent
+from agent.rewriter import get_rewritten_prompt
+from agent.safety import UnsafePromptError, check_safety
+from stt.transcriber import load_whisper_model, transcribe_audio
+
+try:
+    from config import (
+        CLOUD_HOST, CLOUD_PORT, OUTPUT_DIR, LOCAL_API_URL,
+        WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE,
+    )
+except ImportError:
+    # Fallback defaults if config.py not accessible
+    CLOUD_HOST = "0.0.0.0"
+    CLOUD_PORT = 8000
+    OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
+    LOCAL_API_URL = "http://localhost:8001"
+    WHISPER_MODEL_SIZE = "base"
+    WHISPER_DEVICE = "cpu"
+    WHISPER_COMPUTE_TYPE = "int8"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Pipeline State ────────────────────────────────────────────────────────
+pipeline = None
+pipeline_lock = Lock()
+
+# ── WebSocket Connections ─────────────────────────────────────────────────
+# All connected OBS overlay clients
+overlay_clients: list[WebSocket] = []
+
+
+# ── Pydantic Models ───────────────────────────────────────────────────────
+class GenerationRequest(BaseModel):
+    prompt: str
+    style: str = ""
+
+
+# ── Helper Functions ──────────────────────────────────────────────────────
+def build_prompt(prompt: str, style: str) -> str:
+    clean_prompt = prompt.strip()
+    clean_style = style.strip()
+    if not clean_style:
+        return clean_prompt
+    return f"{clean_prompt}, {clean_style} style"
+
+
+def create_output_path() -> Path:
+    filename = f"generation_{int(time())}_{uuid4().hex[:8]}.png"
+    return OUTPUT_DIR / filename
+
+
+async def broadcast_to_overlays(message: dict):
+    """Send a message to all connected OBS overlay WebSocket clients."""
+    import json
+    dead = []
+    payload = json.dumps(message)
+    for ws in overlay_clients:
+        try:
+            await ws.send_text(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in overlay_clients:
+            overlay_clients.remove(ws)
+
+
+async def push_prop_to_local_engine(filename: str, anchor_type: str):
+    """Event-driven: push new prop directly to the Local Engine (Port 8001)."""
+    import requests as req
+    try:
+        image_url = f"{CLOUD_API_URL}/outputs/{filename}"
+        resp = await run_in_threadpool(
+            req.post,
+            f"{LOCAL_API_URL}/equip",
+            json={"image_url": image_url, "anchor_type": anchor_type},
+            timeout=10,
+        )
+        if resp.ok:
+            print(f"[Event-Driven] Prop pushed to Local Engine: {filename}")
+        else:
+            print(f"[Event-Driven] Local Engine rejected prop: {resp.status_code}")
+    except Exception as exc:
+        print(f"[Event-Driven] Could not reach Local Engine: {exc}")
+
+
+def remove_background_from_image(image_path: Path) -> Path:
+    """Remove background from a generated prop image using rembg."""
+    try:
+        from rembg import remove
+        from PIL import Image
+        import io
+
+        with open(image_path, "rb") as f:
+            input_data = f.read()
+
+        output_data = remove(input_data)
+
+        nobg_path = image_path.with_name(image_path.stem + "_nobg.png")
+        with open(nobg_path, "wb") as f:
+            f.write(output_data)
+
+        print(f"[rembg] Background removed: {nobg_path.name}")
+        return nobg_path
+    except Exception as exc:
+        print(f"[rembg] Failed: {exc}")
+        return image_path
+
+
+# ── Global URL for self-referencing ───────────────────────────────────────
+CLOUD_API_URL = f"http://localhost:{CLOUD_PORT}"
+
+
+# ── App Lifespan ──────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global pipeline
+
+    # Load Z-Image-Turbo pipeline
+    print("[Startup] Loading Z-Image-Turbo pipeline...")
+    pipeline = load_pipeline()
+
+    # Load Whisper STT model
+    print("[Startup] Loading Whisper STT model...")
+    load_whisper_model(
+        model_size=WHISPER_MODEL_SIZE,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE,
+    )
+
+    print("[Startup] All models loaded. Server ready!")
+    yield
+
+
+# ── FastAPI App ───────────────────────────────────────────────────────────
+app = FastAPI(title="Ghost Stream Cloud Backend", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Application absolute pathing matrix mapping straight to your setup
-BASE_DIR = "/teamspace/studios/this_studio/GhostFrame"
-IDEOGRAM_DIR = os.path.join(BASE_DIR, "ideogram4")
-OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+# Serve generated images
+app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 
-# Ensure structural output paths exist safely
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# Serve frontend files
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
+if FRONTEND_DIR.exists():
+    app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 
-# Mount directory to automatically turn files into clean web-accessible URLs
-app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
-class GenerationRequest(BaseModel):
-    prompt: str
-    style: str
+# ── Exception Handlers ───────────────────────────────────────────────────
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "error", "message": exc.detail},
+    )
 
-def compile_asymmetric_prompt(user_prompt: str, style_modifier: str) -> str:
-    """
-    Formulates text vectors directly into the exact nested JSON architecture 
-    required for Ideogram 4.0 Inference while applying frontend visual styles.
-    """
-    payload = {
-        "high_level_description": f"{user_prompt}, {style_modifier} style",
-        "compositional_deconstruction": {
-            "background": f"{user_prompt}, high quality streaming asset, background frame layer",
-            "elements": [
-                {"type": "obj", "desc": f"stylized elements matched to {style_modifier} theme"}
-            ]
-        }
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"status": "error", "message": "Invalid request body."},
+    )
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "model_loaded": pipeline is not None,
+        "service": "ghost-stream-cloud",
     }
-    return json.dumps(payload)
+
 
 @app.post("/generate")
-async def process_generation(payload: GenerationRequest):
+async def generate(payload: GenerationRequest):
+    """Text prompt → Agent → Z-Image-Turbo → Image."""
     if not payload.prompt.strip():
-        raise HTTPException(status_code=400, detail="Null prompt telemetry received.")
-    
-    target_filename = "stream_output.png"
-    target_filepath = os.path.join(OUTPUT_DIR, target_filename)
-    
-    # Structure the prompt parameters according to backend requirements
-    final_prompt = compile_asymmetric_prompt(payload.prompt, payload.style)
-    
-    # Map the exact parameters that successfully generated your proof-of-concept image
-    execution_cmd = [
-        "python", "run_inference.py",
-        "--prompt", final_prompt,
-        "--no-magic-prompt",
-        "--output", target_filepath,
-        "--quantization", "nf4",
-        "--sampler-preset", "V4_DEFAULT_20",
-        "--seed", "42"
-    ]
-    
-    print(f"[ENGINE] Launching Ideogram 4.0 Subprocess pipeline in directory: {IDEOGRAM_DIR}")
-    
-    try:
-        # Run the conditional-only inference pipeline directly on your cloud hardware
-        result = subprocess.run(
-            execution_cmd,
-            cwd=IDEOGRAM_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
-        )
-        
-        if not os.path.exists(target_filepath):
-            raise HTTPException(status_code=500, detail="Inference finished, but payload missing from filesystem.")
-        
-        # Calculate dynamic file modification Unix timestamp to bypass browser cache issues
-        cache_buster = int(os.path.getmtime(target_filepath))
-        
-        return {
-            "status": "success",
-            "image_url": f"http://localhost:8000/outputs/{target_filename}?v={cache_buster}",
-            "metadata": {
-                "scene": "Stream Asset Container",
-                "lighting": "Studio Dynamic Array"
-            }
-        }
-        
-    except subprocess.CalledProcessError as err:
-        print(f"[ENGINE ERROR] Standard Error log from inference run:\n{err.stderr}")
-        raise HTTPException(status_code=500, detail=f"Inference Engine Crash: {err.stderr[:250]}")
-    except Exception as general_err:
-        raise HTTPException(status_code=500, detail=str(general_err))
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
+
+    # Agent step: rewrite + safety check + style/anchor tagging
+    agent_result = await run_in_threadpool(run_agent, payload.prompt)
+
+    try:
+        check_safety(agent_result)
+    except UnsafePromptError as exc:
+        raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
+
+    rewritten_prompt = get_rewritten_prompt(agent_result, payload.prompt)
+
+    output_path = create_output_path()
+    final_prompt = build_prompt(rewritten_prompt, payload.style)
+
+    def run_generation():
+        with pipeline_lock:
+            return generate_image(pipeline, final_prompt, output_path)
+
+    try:
+        metrics = await run_in_threadpool(run_generation)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+
+    if not output_path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail="Inference finished, but the output image was not saved.",
+        )
+
+    anchor_type = agent_result.get("anchor_type", "background")
+
+    # If it's a prop (not background), remove background
+    filename_nobg = None
+    if anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+        filename_nobg = nobg_path.name
+
+    # Broadcast to OBS overlay
+    broadcast_filename = filename_nobg or output_path.name
+    await broadcast_to_overlays({
+        "type": "new_prop",
+        "filename": broadcast_filename,
+        "anchor_type": anchor_type,
+    })
+
+    # Event-driven: push prop directly to Local Engine
+    asyncio.create_task(push_prop_to_local_engine(broadcast_filename, anchor_type))
+
+    return {
+        "status": "success",
+        "filename": output_path.name,
+        "filename_nobg": filename_nobg,
+        "metrics": metrics,
+        "agent": {
+            "original_prompt": payload.prompt,
+            "final_prompt": final_prompt,
+            "style_detected": agent_result.get("style", ""),
+            "anchor_type": anchor_type,
+            "agent_ok": agent_result.get("agent_ok", False),
+        },
+    }
+
+
+@app.post("/generate-voice")
+async def generate_voice(
+    audio: UploadFile = File(...),
+    style: str = Form(""),
+    remove_bg: str = Form("true"),
+):
+    """Audio blob → Whisper STT → Agent → Z-Image-Turbo → Image."""
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
+
+    # Save the uploaded audio to a temp file
+    suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await audio.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Step 1: Transcribe audio to text
+        transcript = await run_in_threadpool(transcribe_audio, tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    if not transcript or not transcript.strip():
+        raise HTTPException(status_code=400, detail="Could not transcribe any speech from the audio.")
+
+    # Step 2: Run agent (rewrite + safety + anchor detection)
+    agent_result = await run_in_threadpool(run_agent, transcript)
+
+    try:
+        check_safety(agent_result)
+    except UnsafePromptError as exc:
+        raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
+
+    rewritten_prompt = get_rewritten_prompt(agent_result, transcript)
+
+    # Step 3: Generate image
+    output_path = create_output_path()
+    final_prompt = build_prompt(rewritten_prompt, style)
+
+    def run_generation():
+        with pipeline_lock:
+            return generate_image(pipeline, final_prompt, output_path)
+
+    try:
+        metrics = await run_in_threadpool(run_generation)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+
+    if not output_path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail="Inference finished, but the output image was not saved.",
+        )
+
+    anchor_type = agent_result.get("anchor_type", "background")
+
+    # Step 4: Optional background removal for props
+    filename_nobg = None
+    if remove_bg.lower() == "true" and anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+        filename_nobg = nobg_path.name
+
+    # Broadcast to OBS overlay
+    broadcast_filename = filename_nobg or output_path.name
+    await broadcast_to_overlays({
+        "type": "new_prop",
+        "filename": broadcast_filename,
+        "anchor_type": anchor_type,
+    })
+
+    # Event-driven: push prop directly to Local Engine
+    asyncio.create_task(push_prop_to_local_engine(broadcast_filename, anchor_type))
+
+    return {
+        "status": "success",
+        "transcript": transcript,
+        "filename": output_path.name,
+        "filename_nobg": filename_nobg,
+        "metrics": metrics,
+        "agent": {
+            "original_prompt": transcript,
+            "final_prompt": final_prompt,
+            "style_detected": agent_result.get("style", ""),
+            "anchor_type": anchor_type,
+            "agent_ok": agent_result.get("agent_ok", False),
+        },
+    }
+
+
+@app.post("/upload-prop")
+async def upload_prop(
+    file: UploadFile = File(...),
+    anchor_type: str = Form("right_wrist"),
+):
+    """Upload a custom prop image and broadcast to OBS overlay."""
+    content = await file.read()
+    filename = f"custom_{int(time())}_{uuid4().hex[:8]}.png"
+    save_path = OUTPUT_DIR / filename
+
+    # Remove background from the uploaded prop
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+
+    # Broadcast to OBS overlay
+    await broadcast_to_overlays({
+        "type": "new_prop",
+        "filename": nobg_path.name,
+        "anchor_type": anchor_type,
+    })
+
+    # Event-driven: push directly to Local Engine
+    asyncio.create_task(push_prop_to_local_engine(nobg_path.name, anchor_type))
+
+    return {
+        "status": "success",
+        "filename": nobg_path.name,
+        "anchor_type": anchor_type,
+    }
+
+
+@app.post("/clear-props")
+async def clear_props():
+    """Clear all props from the OBS overlay."""
+    await broadcast_to_overlays({
+        "type": "new_prop",
+        "action": "clear",
+    })
+
+    # Also tell local engine to clear
+    import requests as req
+    try:
+        await run_in_threadpool(
+            req.post, f"{LOCAL_API_URL}/clear", timeout=5
+        )
+    except Exception:
+        pass
+
+    return {"status": "ok", "message": "Props cleared."}
+
+
+@app.websocket("/ws/anchor")
+async def ws_anchor(websocket: WebSocket):
+    """WebSocket endpoint for OBS overlay clients.
+
+    Receives anchor preference and broadcasts prop events.
+    Tracking data is streamed directly from the Local Engine
+    (Port 8001) for minimum latency — this endpoint only handles
+    prop change events.
+    """
+    await websocket.accept()
+    overlay_clients.append(websocket)
+    print(f"[WebSocket] Overlay client connected. Total: {len(overlay_clients)}")
+
+    try:
+        while True:
+            # Keep connection alive, receive anchor preference updates
+            data = await websocket.receive_text()
+            # Client may send anchor preferences — we don't need to process them here
+            # since tracking data flows directly from local engine
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if websocket in overlay_clients:
+            overlay_clients.remove(websocket)
+        print(f"[WebSocket] Overlay client disconnected. Total: {len(overlay_clients)}")
+
+
+# ── Entry Point ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    # Serves the engine over port 8000
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run(app, host=CLOUD_HOST, port=CLOUD_PORT)

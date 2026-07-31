@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostFrame OBS Overlay</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: transparent !important; /* CRITICAL for OBS */
+        }
+
+        /* Container for the active prop */
+        #prop-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none; /* Let clicks pass through */
+            z-index: 10;
+        }
+
+        /* The actual image element */
+        #prop-img {
+            position: absolute;
+            display: none;
+            transform-origin: center center;
+            will-change: transform; /* Hardware acceleration for smooth 30fps */
+            /* Fast transition for smooth movement between frames */
+            transition: transform 0.05s linear;
+        }
+        
+        /* Full screen background mode */
+        #bg-img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            display: none;
+            z-index: -1; /* Goes behind everything */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Full screen background element -->
+    <img id="bg-img" src="" alt="Background">
+
+    <!-- Foreground prop container -->
+    <div id="prop-container">
+        <img id="prop-img" src="" alt="Prop">
+    </div>
+
+    <script src="overlay.js"></script>
+</body>
+</html>
