@@ -151,15 +151,8 @@ function handleNewProp(data) {
 
     if (currentProp.anchorType === "background") {
         propImg.style.display = "none";
-        bgImg.src = currentProp.url;
-        bgImg.style.display = "block";
-        bgImg.style.position = "absolute";
-        bgImg.style.top = "0";
-        bgImg.style.left = "0";
-        bgImg.style.transform = "none";
-        bgImg.style.width = "100%";
-        bgImg.style.height = "100%";
-        bgImg.style.objectFit = "cover";
+        // Do NOT show background in HTML, local engine handles it with RVM!
+        bgImg.style.display = "none";
     } else {
         bgImg.style.display = "none";
         propImg.src = currentProp.url;
