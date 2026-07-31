@@ -18,7 +18,13 @@ from typing import Optional, Tuple
 
 import cv2
 import numpy as np
-import rembg
+try:
+    import rembg
+    _HAS_REMBG = True
+except ImportError:
+    _HAS_REMBG = False
+    print("[PropManager] rembg not installed — background removal will be skipped.")
+    print("              Props arriving from cloud already have backgrounds removed.")
 from PIL import Image
 
 from prop_config import (
@@ -82,9 +88,25 @@ class PropManager:
         try:
             with open(image_path, "rb") as f:
                 input_data = f.read()
-            output_data = rembg.remove(input_data)
-            img = Image.open(io.BytesIO(output_data)).convert("RGBA")
+
+            # Try loading as RGBA first — if the image already has
+            # transparency (e.g., cloud already ran rembg), skip removal.
+            img = Image.open(io.BytesIO(input_data)).convert("RGBA")
             arr = np.array(img)
+            alpha_channel = arr[:, :, 3]
+            has_transparency = np.any(alpha_channel < 250)
+
+            if has_transparency:
+                # Image already has transparency — skip rembg
+                print("[PropManager] Image already has transparency, skipping rembg.")
+            elif _HAS_REMBG:
+                # No transparency — run rembg to remove background
+                output_data = rembg.remove(input_data)
+                img = Image.open(io.BytesIO(output_data)).convert("RGBA")
+                arr = np.array(img)
+            else:
+                print("[PropManager] Warning: image has no transparency and rembg not installed.")
+
             bgr = cv2.cvtColor(arr[:, :, :3], cv2.COLOR_RGB2BGR)
             alpha = arr[:, :, 3]
             rgba = np.dstack((bgr, alpha))
