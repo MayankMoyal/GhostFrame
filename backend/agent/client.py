@@ -1,5 +1,10 @@
-import json
+"""
+Agent client — MODEL: qwen3:4b
 
+Updated to support precise anchor_point selection.
+"""
+
+import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
