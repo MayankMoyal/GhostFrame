@@ -264,45 +264,41 @@ def _build_tracking_payload(track_result, frame_w, frame_h) -> dict:
         pose = track_result.pose
 
         # Calculate scale from shoulder width
-        shoulder_width = getattr(pose, 'shoulder_width', 0)
-        if shoulder_width > 0:
-            payload["scale"] = shoulder_width / (0.25 * frame_w)
+        if pose.shoulder_width and pose.shoulder_width > 0:
+            payload["scale"] = pose.shoulder_width / 0.25
 
         # Add key tracking points
         points = []
 
-        # Right wrist
+        # Hand positions
         if track_result.hands:
             for hand in track_result.hands:
                 points.append({
-                    "x": hand.palm_x * frame_w,
-                    "y": hand.palm_y * frame_h,
-                    "side": hand.side,
+                    "x": hand.palm[0] * frame_w,
+                    "y": hand.palm[1] * frame_h,
+                    "side": hand.handedness,
                 })
 
         # Head
-        head_center = getattr(pose, 'head_center', None)
-        if head_center:
+        if pose.head_center:
             points.append({
-                "x": head_center[0] * frame_w,
-                "y": head_center[1] * frame_h,
+                "x": pose.head_center[0] * frame_w,
+                "y": pose.head_center[1] * frame_h,
                 "zone": "head",
             })
 
         # Shoulders midpoint
-        neck_point = getattr(pose, 'neck_point', None)
-        if neck_point:
+        if pose.neck_point:
             points.append({
-                "x": neck_point[0] * frame_w,
-                "y": neck_point[1] * frame_h,
+                "x": pose.neck_point[0] * frame_w,
+                "y": pose.neck_point[1] * frame_h,
                 "zone": "both_shoulders",
             })
 
         payload["points"] = points
 
-        # Head tilt angle
-        head_tilt = getattr(pose, 'head_tilt_deg', 0)
-        payload["angle"] = head_tilt or 0
+        # Head angle
+        payload["angle"] = pose.head_angle or 0
 
     return payload
 
