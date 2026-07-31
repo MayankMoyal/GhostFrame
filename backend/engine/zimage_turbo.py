@@ -6,12 +6,23 @@ import torch
 from diffusers import ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig
 from transformers import AutoModel, BitsAndBytesConfig as TransformersBitsAndBytesConfig
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+
 GGUF_TRANSFORMER_PATH = os.environ.get(
     "ZIMAGE_GGUF_PATH",
-    "./models/gguf/z_image_turbo-Q8_0.gguf",
+    str(_BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q8_0.gguf"),
 )
 
 def load_pipeline():
+    # Resolve to absolute path (diffusers requires this for local GGUF files)
+    gguf_path = str(Path(GGUF_TRANSFORMER_PATH).resolve())
+
+    if not Path(gguf_path).exists():
+        raise FileNotFoundError(
+            f"GGUF transformer not found at: {gguf_path}\n"
+            f"Download it first with:  bash setup.sh"
+        )
+
     print("Loading text encoder (Qwen3-4B) in 4-bit (NF4)...")
     # NF4 4-bit is faster and more stable than INT8. Using bfloat16 compute dtype.
     text_encoder_quant_config = TransformersBitsAndBytesConfig(
@@ -26,10 +37,10 @@ def load_pipeline():
         torch_dtype=torch.bfloat16,
     )
 
-    print(f"Loading Z-Image-Turbo GGUF Q5_K_M transformer from {GGUF_TRANSFORMER_PATH}...")
+    print(f"Loading Z-Image-Turbo GGUF transformer from {gguf_path}...")
     # compute_dtype=bfloat16 prevents the NaNs that cause black images
     transformer = ZImageTransformer2DModel.from_single_file(
-        GGUF_TRANSFORMER_PATH,
+        gguf_path,
         quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
         torch_dtype=torch.bfloat16,
     )
