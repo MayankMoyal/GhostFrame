@@ -1,39 +1,52 @@
 # ============================================================
 # GhostFrame — Project Dependencies
 # ============================================================
-# Install everything:  pip install -r requirements.txt
+# Because the architecture is split, you only need to install
+# the dependencies for the half you are running!
 # ============================================================
 
-# --- Server ---
+# ------------------------------------------------------------
+# ☁️ CLOUD BACKEND REQUIREMENTS (main.py)
+# ------------------------------------------------------------
+# Server
 fastapi
 uvicorn
 python-multipart
 
-# --- Image Generation (Z-Image-Turbo) ---
+# Image Generation (Z-Image-Turbo)
 torch
 diffusers
 accelerate
 transformers
 torchao
 
-# --- Speech-to-Text (faster-whisper) ---
+# Speech-to-Text
 faster-whisper
 
-# --- AI Agent / Prompt Rewriter (Ollama client) ---
+# Agent & General API
 requests
-
-# --- Pose Overlay (MediaPipe) ---
-mediapipe
-opencv-python
-
-# --- Post-Processing (Background Removal) ---
-rembg
 Pillow
-
-# --- General ---
-numpy
 psutil
 
-# --- Testing / Dev (mic recording for STT tests) ---
-sounddevice
-soundfile
+# Background Removal (Rembg)
+rembg
+onnxruntime
+
+# ------------------------------------------------------------
+# 💻 LOCAL ENGINE REQUIREMENTS (ghost_engine.py / voice_trigger.py)
+# ------------------------------------------------------------
+# Vision Engine & Pose Tracking
+opencv-python
+numpy
+mediapipe
+
+# OBS Integration
+pyvirtualcam
+
+# Local Bridge API
+fastapi
+uvicorn
+requests
+
+# Voice Trigger Microphone Input
+pyaudio

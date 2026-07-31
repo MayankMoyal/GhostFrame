@@ -7,7 +7,6 @@ from threading import Lock
 from time import time
 from uuid import uuid4
 import os
-import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,13 +17,21 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
 
-from engine.zimage_turbo import generate_image, load_pipeline
+MOCK_AI = os.getenv("MOCK_AI", "0") == "1"
+
+if not MOCK_AI:
+    from engine.zimage_turbo import generate_image, load_pipeline
+    from stt.transcriber import load_whisper_model, transcribe_audio
+    from postprocess.background_remover import remove_background, load_rembg_session
+    from postprocess.prop_alignment import align_prop
+else:
+    # Define stubs for type hinting / globals to prevent NameError
+    generate_image = load_pipeline = load_whisper_model = transcribe_audio = None
+    remove_background = load_rembg_session = align_prop = None
+
 from agent.router import run_agent
 from agent.rewriter import get_rewritten_prompt
 from agent.safety import UnsafePromptError, check_safety
-from stt.transcriber import load_whisper_model, transcribe_audio
-from postprocess.background_remover import remove_background, load_rembg_session
-from postprocess.prop_alignment import align_prop
 
 
 WEBCAM_INDEX = int(os.getenv("WEBCAM_INDEX", "1"))
@@ -86,9 +93,12 @@ async def _align_generated_prop(nobg_path: Path, anchor_type: str) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline
-    pipeline = load_pipeline()
-    load_whisper_model()  # ~1GB int8, stays resident alongside Z-Image-Turbo
-    load_rembg_session()
+    if not MOCK_AI:
+        pipeline = load_pipeline()
+        load_whisper_model()  # ~1GB int8, stays resident alongside Z-Image-Turbo
+        load_rembg_session()
+    else:
+        print("[INFO] MOCK_AI is enabled. Skipping heavy model loading.")
     yield
 
 
@@ -123,13 +133,39 @@ async def validation_exception_handler(request, exc):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_loaded": pipeline is not None}
+    return {"status": "ok", "model_loaded": MOCK_AI or pipeline is not None}
 
 
 @app.post("/generate")
 async def generate(payload: GenerationRequest):
     if not payload.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
+
+    if MOCK_AI:
+        import asyncio
+        from PIL import Image, ImageDraw
+        await asyncio.sleep(1.5)
+        
+        output_path = create_output_path()
+        img = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([100, 100, 412, 412], fill=(255, 0, 0, 200))
+        nobg_path = output_path.with_stem(output_path.stem + "_nobg")
+        img.save(nobg_path)
+        
+        return {
+            "status": "success",
+            "filename": nobg_path.name,
+            "filename_nobg": nobg_path.name,
+            "metrics": {"latency_seconds": 1.5, "peak_vram_gb": 0},
+            "agent": {
+                "original_prompt": payload.prompt,
+                "final_prompt": "A mock red square, cinematic",
+                "style_detected": payload.style,
+                "anchor_type": "hand_held",
+                "agent_ok": True,
+            },
+        }
 
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
@@ -217,6 +253,34 @@ async def generate_voice(
 
     This is the primary endpoint for the streamer's voice prompter flow.
     """
+    if MOCK_AI:
+        # Generate a dummy transparent image using PIL
+        import asyncio
+        from PIL import Image, ImageDraw
+        await asyncio.sleep(1.5)  # simulate processing time
+        
+        output_path = create_output_path()
+        img = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([100, 100, 412, 412], fill=(255, 0, 0, 200))
+        nobg_path = output_path.with_stem(output_path.stem + "_nobg")
+        img.save(nobg_path)
+        
+        return {
+            "status": "success",
+            "transcript": "Mock voice prompt testing",
+            "filename": nobg_path.name,
+            "filename_nobg": nobg_path.name,
+            "metrics": {"latency_seconds": 1.5, "peak_vram_gb": 0},
+            "agent": {
+                "original_prompt": "Mock voice prompt testing",
+                "final_prompt": "A mock red square, cinematic",
+                "style_detected": style,
+                "anchor_type": "hand_held",
+                "agent_ok": True,
+            },
+        }
+
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
 
@@ -318,14 +382,22 @@ async def upload_prop(
     nobg_filename = None
     grip_fields = {}
     
-    try:
-        await run_in_threadpool(remove_background, output_path, nobg_path)
+    if MOCK_AI:
+        # Just use the original file as the nobg file
+        import shutil
+        shutil.copy(output_path, nobg_path)
         nobg_filename = nobg_path.name
-    except Exception as exc:
-        print(f"[BG Removal] Warning — failed for uploaded prop: {exc}")
-        
-    if nobg_filename:
-        grip_fields = await _align_generated_prop(nobg_path, anchor_type)
+        # Provide dummy grip fields
+        grip_fields = {"grip_x": 0.5, "grip_y": 0.5, "intrinsic_angle_deg": 0}
+    else:
+        try:
+            await run_in_threadpool(remove_background, output_path, nobg_path)
+            nobg_filename = nobg_path.name
+        except Exception as exc:
+            print(f"[BG Removal] Warning — failed for uploaded prop: {exc}")
+            
+        if nobg_filename:
+            grip_fields = await _align_generated_prop(nobg_path, anchor_type)
 
     return {
         "filename": output_path.name,

@@ -20,28 +20,18 @@ Rules:
 - Set is_safe to false ONLY for prompts requesting sexual content, real identifiable people, hate symbols, or graphic violence/gore.
 - Default anchor_type to "background" unless the prompt clearly describes an object meant to be held or worn.
 
-ANCHOR_POINT — picks the exact OBS placement anchor for the generated image. Choose exactly ONE value from this closed list:
-  * "background"      — full-scene backdrop, not attached to the streamer's body. Use when anchor_type is "background".
-  * "ambient"         — floating overlay element not attached to the streamer (e.g. floating runes, drifting petals, emoji rain). Use when anchor_type is "ambient_floating".
-  * "head"            — attached at/above the head (hats, crowns, halos, horns, headphones, helmets).
-  * "left_shoulder"   — perched or draped on the LEFT shoulder only (a parrot on left shoulder, left pauldron).
-  * "right_shoulder"  — perched or draped on the RIGHT shoulder only.
-  * "both_shoulders"  — spans both shoulders (capes, cloaks, yokes, wings worn on the back/shoulders).
-  * "left_wrist"      — held in or worn on the LEFT hand/wrist specifically (a sword in left hand, left gauntlet).
-  * "right_wrist"     — held in or worn on the RIGHT hand/wrist specifically.
-  * "both_wrists"     — held in or worn on BOTH wrists/hands (dual wield, shackles, bracelets on both arms).
-  * "prop_in_hand"    — held in a hand when the prompt clearly means a held prop but does NOT name which hand. Prefer a side-specific wrist value whenever the prompt names a side; only fall back to "prop_in_hand" when the side is genuinely ambiguous.
+ANCHOR_TYPE — picks the exact category for the generated image. Choose exactly ONE value from this closed list:
+  * "background"  — full-scene backdrop, not attached to the streamer's body.
+  * "hand_held"   — sword, staff, wand, axe, torch, flag, or anything held in the hand.
+  * "shield"      — shield, buckler, defensively held on the arm.
+  * "head_wear"   — hat, helmet, crown, tiara, headband.
+  * "neck_wear"   — necklace, pendant, chain, choker, scarf.
+  * "wrist_wear"  — bracelet, watch, gauntlet, wristband.
+  * "ear_wear"    — earring, ear cuff.
+  * "face_wear"   — glasses, mask, monocle, goggles.
+  * "body_wear"   — cape, armor, vest, cloak, wings, backpack.
 
-Anchor_point selection rules:
-  - If the prompt describes a held prop and names a hand ("left", "right", "both"), pick the matching wrist value.
-  - If the prompt describes a held prop but does not name a side, use "prop_in_hand".
-  - If the prompt describes something worn on the head, use "head".
-  - If the prompt describes something worn on shoulders and names a side, use that shoulder value; if it spans both or is a cape/cloak/wings, use "both_shoulders".
-  - If the prompt describes a floating/ambient effect (particles, floating text, weather overlay), use "ambient".
-  - If none of the above apply, default to "background".
-  - anchor_point and anchor_type must be consistent: a "background" anchor_point implies anchor_type "background"; an "ambient" anchor_point implies anchor_type "ambient_floating"; wrist/shoulder/head anchor_points imply the appropriate non-background anchor_type.
-
-- Output valid JSON only. No markdown, no code fences, no explanation text."""
+- Output valid JSON only. No markdown, no explanation text."""
 
 
 def call_agent(user_prompt: str, timeout: int = 60) -> dict:
