@@ -83,6 +83,26 @@
                             </div>
                         </div>
 
+                        <div class="options-row" style="margin-top: 15px; display: flex; align-items: center; gap: 15px;">
+                            <div class="option" style="flex: 1;">
+                                <label for="uploadAnchor">Prop Anchor</label>
+                                <select id="uploadAnchor">
+                                    <option value="right_wrist">Right Wrist (Sword/Wand)</option>
+                                    <option value="left_wrist">Left Wrist (Shield)</option>
+                                    <option value="head">Head (Hat/Helmet)</option>
+                                    <option value="both_shoulders">Shoulders (Cape/Wings)</option>
+                                    <option value="background">Background</option>
+                                </select>
+                            </div>
+                            
+                            <div class="option" style="flex: 1; display: flex; align-items: flex-end;">
+                                <input type="file" id="propUploadInput" accept="image/png, image/jpeg" style="display: none;">
+                                <button id="propUploadBtn" style="padding: 12px 20px; font-size: 14px; border-radius: 8px; cursor: pointer; background: #10b981; color: white; border: none; width: 100%; transition: background 0.2s;">
+                                    ⬆️ Upload Custom Prop
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Voice button replaces the generate button -->
                     </div>
 

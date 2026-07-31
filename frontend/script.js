@@ -282,6 +282,58 @@ document.getElementById("clearPreview").addEventListener("click", () => {
     fetch(`${BACKEND_BASE_URL}/clear-props`, { method: "POST" }).catch(console.error);
 });
 
+// === CUSTOM PROP UPLOAD LOGIC ===
+const propUploadBtn = document.getElementById("propUploadBtn");
+const propUploadInput = document.getElementById("propUploadInput");
+const uploadAnchorSelect = document.getElementById("uploadAnchor");
+
+if (propUploadBtn && propUploadInput) {
+    propUploadBtn.addEventListener("click", () => {
+        propUploadInput.click();
+    });
+
+    propUploadInput.addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const anchorType = uploadAnchorSelect.value;
+        
+        // Reset UI somewhat
+        setText("analysis", `Uploading custom prop...`);
+        setText("sceneType", `Anchor: ${anchorType}`);
+        setPreviewLoading("Uploading and processing custom prop...");
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("anchor_type", anchorType);
+
+            const response = await fetch(`${BACKEND_BASE_URL}/upload-prop`, {
+                method: "POST",
+                body: formData,
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || data.detail || `HTTP ${response.status}`);
+            }
+
+            const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
+            setPreviewImage(imageUrl, "Custom Uploaded Prop");
+            addToRecentGenerations(imageUrl, "Custom Upload");
+            
+            setText("analysis", "Custom prop processed and broadcast successfully.");
+
+        } catch (error) {
+            setText("analysis", error.message);
+            setPreviewError(error.message);
+        } finally {
+            propUploadInput.value = ""; // Reset file input
+        }
+    });
+}
+
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebarToggle");
 
