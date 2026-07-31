@@ -6,13 +6,14 @@ from pathlib import Path
 from threading import Lock
 from time import time
 from uuid import uuid4
-
+import os
 import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
@@ -24,8 +25,10 @@ from agent.safety import UnsafePromptError, check_safety
 from overlay.pipeline import PoseAnchorPipeline
 from stt.transcriber import load_whisper_model, transcribe_audio
 from postprocess.background_remover import remove_background, load_rembg_session
+from postprocess.prop_alignment import align_prop
 
 
+WEBCAM_INDEX = int(os.getenv("WEBCAM_INDEX", "1"))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,6 +57,31 @@ def build_prompt(prompt: str, style: str) -> str:
 def create_output_path() -> Path:
     filename = f"generation_{int(time())}_{uuid4().hex[:8]}.png"
     return OUTPUT_DIR / filename
+
+
+async def _align_generated_prop(nobg_path: Path, anchor_type: str) -> dict:
+    """Run prop_alignment.align_prop() on a background-removed PNG and
+    overwrite it with the tight-cropped version.
+
+    Raises HTTPException(500) if the generation had no visible content
+    after background removal — that's a bad generation, not something
+    to silently broadcast. Returns the grip fields for broadcast_msg.
+    """
+    rgba = Image.open(nobg_path).convert("RGBA")
+    result = await run_in_threadpool(align_prop, rgba, anchor_type)
+
+    if not result["valid"]:
+        raise HTTPException(
+            status_code=500,
+            detail="Generation produced no visible content after background removal.",
+        )
+
+    result["image"].save(nobg_path)
+    return {
+        "grip_x": result["grip_x"],
+        "grip_y": result["grip_y"],
+        "intrinsic_angle_deg": result["intrinsic_angle_deg"],
+    }
 
 
 @asynccontextmanager
@@ -113,27 +141,14 @@ async def generate(payload: GenerationRequest):
     # points to (see agent/README.md) -- Phi-3 and Qwen3-4B-Instruct-2507
     # are both drop-in candidates. Runs in a threadpool since it's a
     # blocking HTTP call to Ollama.
-    # agent_result = await run_in_threadpool(run_agent, payload.prompt)
-    # 
-    # try:
-    #     check_safety(agent_result)
-    # except UnsafePromptError as exc:
-    #     raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
-    # 
-    # rewritten_prompt = get_rewritten_prompt(agent_result, payload.prompt)
-
-    # BYPASS AGENT FOR TESTING
-    lower_p = payload.prompt.lower()
-    anchor = "background"
-    if any(w in lower_p for w in ["sword", "gun", "wand", "hand", "hold"]):
-        anchor = "right_wrist"
-    elif any(w in lower_p for w in ["hat", "helmet", "glasses", "head"]):
-        anchor = "head"
-    elif any(w in lower_p for w in ["shirt", "jacket", "wings", "shoulder"]):
-        anchor = "both_shoulders"
-        
-    agent_result = {"style": "", "anchor_type": anchor, "agent_ok": True}
-    rewritten_prompt = payload.prompt
+    agent_result = await run_in_threadpool(run_agent, payload.prompt)
+    
+    try:
+        check_safety(agent_result)
+    except UnsafePromptError as exc:
+        raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
+    
+    rewritten_prompt = get_rewritten_prompt(agent_result, payload.prompt)
 
     output_path = create_output_path()
     final_prompt = build_prompt(rewritten_prompt, payload.style)
@@ -155,6 +170,7 @@ async def generate(payload: GenerationRequest):
 
     # Optional background removal (runs on CPU, zero VRAM cost).
     nobg_filename = None
+    grip_fields = {}
     if payload.remove_bg:
         nobg_path = output_path.with_stem(output_path.stem + "_nobg")
         try:
@@ -163,11 +179,19 @@ async def generate(payload: GenerationRequest):
         except Exception as exc:
             print(f"[BG Removal] Warning — failed, returning original: {exc}")
 
+        if nobg_filename:
+            # Tight-crop to the object's real alpha content and compute an
+            # accurate grip point (+ intrinsic tilt for held props) instead
+            # of trusting overlay.js's static ZONE_GRIP fraction against a
+            # padded canvas. Raises 500 if the crop is empty.
+            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_point", "background"))
+
     # Broadcast new image to OBS overlay websockets (always, regardless of remove_bg)
     broadcast_msg = {
         "type": "new_prop",
         "filename": nobg_filename if nobg_filename else output_path.name,
-        "anchor_type": agent_result.get("anchor_type", "background")
+        "anchor_type": agent_result.get("anchor_point", "background"),
+        **grip_fields,
     }
     for ws in list(connected_websockets):
         try:
@@ -184,7 +208,7 @@ async def generate(payload: GenerationRequest):
             "original_prompt": payload.prompt,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
-            "anchor_type": agent_result.get("anchor_type", "background"),
+            "anchor_type": agent_result.get("anchor_point", "background"),
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
@@ -197,10 +221,27 @@ async def anchor_stream(websocket: WebSocket, anchor_type: str = "both_shoulders
     connected_websockets.add(websocket)
 
     pose_pipeline = PoseAnchorPipeline(anchor_type=anchor_type)
-    cap = cv2.VideoCapture(0)
-    webcam_ok = cap.isOpened()
+    # Smart camera selection: try WEBCAM_INDEX first, then fallback to 0-4
+    preferred_index = WEBCAM_INDEX
+    indices_to_try = [preferred_index] + [i for i in range(5) if i != preferred_index]
+    
+    cap = None
+    webcam_ok = False
+    
+    for idx in indices_to_try:
+        temp_cap = cv2.VideoCapture(idx)
+        if temp_cap.isOpened():
+            # Verify we can actually read a frame (some virtual cameras open but fail to read)
+            ret, _ = temp_cap.read()
+            if ret:
+                cap = temp_cap
+                webcam_ok = True
+                print(f"[INFO] Successfully connected to webcam at index {idx}")
+                break
+        temp_cap.release()
+
     if not webcam_ok:
-        print("[WARNING] Could not open webcam for tracking! Poses will not update, but broadcasts will still work.")
+        print("[WARNING] Could not open ANY webcam for tracking! Poses will not update, but broadcasts will still work.")
         # We don't close the websocket so that it can still receive new_prop broadcasts.
 
     async def receive_control_messages():
@@ -288,27 +329,14 @@ async def generate_voice(
         raise HTTPException(status_code=400, detail="Could not transcribe any speech from the audio.")
 
     # 3. Agent step: rewrite + safety + style/anchor tagging.
-    # agent_result = await run_in_threadpool(run_agent, transcript)
-    # 
-    # try:
-    #     check_safety(agent_result)
-    # except UnsafePromptError as exc:
-    #     raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
-    # 
-    # rewritten_prompt = get_rewritten_prompt(agent_result, transcript)
-
-    # BYPASS AGENT FOR TESTING
-    lower_p = transcript.lower()
-    anchor = "background"
-    if any(w in lower_p for w in ["sword", "gun", "wand", "hand", "hold"]):
-        anchor = "right_wrist"
-    elif any(w in lower_p for w in ["hat", "helmet", "glasses", "head"]):
-        anchor = "head"
-    elif any(w in lower_p for w in ["shirt", "jacket", "wings", "shoulder"]):
-        anchor = "both_shoulders"
-
-    agent_result = {"style": "", "anchor_type": anchor, "agent_ok": True}
-    rewritten_prompt = transcript
+    agent_result = await run_in_threadpool(run_agent, transcript)
+    
+    try:
+        check_safety(agent_result)
+    except UnsafePromptError as exc:
+        raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
+    
+    rewritten_prompt = get_rewritten_prompt(agent_result, transcript)
 
     # 4. Image generation with Z-Image-Turbo.
     output_path = create_output_path()
@@ -331,6 +359,7 @@ async def generate_voice(
 
     # 5. Optional background removal (CPU-based, zero VRAM cost).
     nobg_filename = None
+    grip_fields = {}
     if remove_bg:
         nobg_path = output_path.with_stem(output_path.stem + "_nobg")
         try:
@@ -339,11 +368,15 @@ async def generate_voice(
         except Exception as exc:
             print(f"[BG Removal] Warning — failed, returning original: {exc}")
 
+        if nobg_filename:
+            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_point", "background"))
+
     # 6. Broadcast the new prop to any active OBS Overlays
     broadcast_msg = {
         "type": "new_prop",
         "filename": nobg_filename if nobg_filename else output_path.name,
-        "anchor_type": agent_result.get("anchor_type", "background")
+        "anchor_type": agent_result.get("anchor_point", "background"),
+        **grip_fields,
     }
     for ws in list(connected_websockets):
         try:
@@ -361,11 +394,59 @@ async def generate_voice(
             "original_prompt": transcript,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
-            "anchor_type": agent_result.get("anchor_type", "background"),
+            "anchor_type": agent_result.get("anchor_point", "background"),
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
 
+@app.post("/upload-prop")
+async def upload_prop(
+    file: UploadFile = File(...),
+    anchor_type: str = Form("right_wrist"),
+):
+    """Upload a custom image to be used as a prop immediately.
+    
+    The backend will save it, remove its background, align it, 
+    and broadcast it to the overlay just like a generated image.
+    """
+    output_path = create_output_path()
+    
+    # Read the uploaded file
+    file_bytes = await file.read()
+    with open(output_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Always attempt background removal and alignment on custom uploads
+    nobg_path = output_path.with_stem(output_path.stem + "_nobg")
+    nobg_filename = None
+    grip_fields = {}
+    
+    try:
+        await run_in_threadpool(remove_background, output_path, nobg_path)
+        nobg_filename = nobg_path.name
+    except Exception as exc:
+        print(f"[BG Removal] Warning — failed for uploaded prop: {exc}")
+        
+    if nobg_filename:
+        grip_fields = await _align_generated_prop(nobg_path, anchor_type)
+        
+    broadcast_msg = {
+        "type": "new_prop",
+        "filename": nobg_filename or output_path.name,
+        "anchor_type": anchor_type,
+        **grip_fields
+    }
+    for ws in list(connected_websockets):
+        try:
+            await ws.send_json(broadcast_msg)
+        except Exception:
+            pass
+
+    return {
+        "filename": output_path.name,
+        "filename_nobg": nobg_filename,
+        "anchor_type": anchor_type
+    }
 
 @app.post("/clear-props")
 async def clear_props():

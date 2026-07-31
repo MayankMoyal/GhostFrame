@@ -1,40 +1,9 @@
-"""
-Agent client — MODEL: qwen3:4b-instruct-2507 (Alibaba Qwen3, 4B, ~2.5GB via Ollama)
-
-Candidate replacement for Phi-3 (client_1.py). Smaller footprint
-(~3.2GB actual VRAM per `ollama ps`, vs Phi-3's ~3.8-3.9GB) and a newer
-model generation.
-
-Verified standalone via direct Ollama calls (agent alone, Z-Image
-pipeline not loaded):
-  - JSON output was well-formed and complete on both test prompts, with
-    richer/more detailed rewrites than Phi-3 produced on the same kind
-    of prompt.
-  - style/anchor_type fields came back contextually correct (e.g.
-    detected "cyberpunk" style from a cyberpunk prompt, not just a
-    default).
-  - Warm-state latency: ~1.4s total, ~1.0s eval for ~80 output tokens.
-    (First call after a fresh pull took ~80s -- that's one-time model
-    load cost, not representative of steady-state latency.)
-  - `ollama ps` showed 100% GPU with no CPU split, standalone.
-
-NOT YET verified: behavior with the Z-Image pipeline also loaded and
-holding ~17GB VRAM at the same time -- that's the real test, since
-that's the scenario that caused Phi-3 to split across CPU/GPU
-originally. Re-check `ollama ps` after running this through the actual
-/generate endpoint before trusting this in production.
-
-To use this model: rename this file to client.py (agent/router.py
-imports `from agent.client import call_agent`, so the active model is
-whichever file is currently named client.py).
-"""
-
 import json
 
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen3:4b-instruct-2507-q4_K_M"
+MODEL_NAME = "qwen3:4b"
 
 SYSTEM_PROMPT = """You are an assistant embedded in a live AI image-generation pipeline for a livestreamer's OBS background.
 Given the user's raw prompt, respond with ONLY a single JSON object, no other text, using exactly these keys:
@@ -44,25 +13,40 @@ Given the user's raw prompt, respond with ONLY a single JSON object, no other te
   "is_safe": true or false,
   "safety_reason": "short reason if is_safe is false, otherwise empty string",
   "style": "a short 1-2 word visual style tag, e.g. cyberpunk, fantasy, cozy, minimal",
-  "anchor_type": "one of: background, prop_in_hand, head_shoulder_accessory, ambient_floating"
+  "anchor_type": "one of: background, prop_in_hand, head_shoulder_accessory, ambient_floating",
+  "anchor_point": "one of: prop_in_hand, left_wrist, right_wrist, both_wrists, head, left_shoulder, right_shoulder, both_shoulders, ambient, background"
 }
 
 Rules:
 - Set is_safe to false ONLY for prompts requesting sexual content, real identifiable people, hate symbols, or graphic violence/gore.
 - Default anchor_type to "background" unless the prompt clearly describes an object meant to be held or worn.
+
+ANCHOR_POINT — picks the exact OBS placement anchor for the generated image. Choose exactly ONE value from this closed list:
+  * "background"      — full-scene backdrop, not attached to the streamer's body. Use when anchor_type is "background".
+  * "ambient"         — floating overlay element not attached to the streamer (e.g. floating runes, drifting petals, emoji rain). Use when anchor_type is "ambient_floating".
+  * "head"            — attached at/above the head (hats, crowns, halos, horns, headphones, helmets).
+  * "left_shoulder"   — perched or draped on the LEFT shoulder only (a parrot on left shoulder, left pauldron).
+  * "right_shoulder"  — perched or draped on the RIGHT shoulder only.
+  * "both_shoulders"  — spans both shoulders (capes, cloaks, yokes, wings worn on the back/shoulders).
+  * "left_wrist"      — held in or worn on the LEFT hand/wrist specifically (a sword in left hand, left gauntlet).
+  * "right_wrist"     — held in or worn on the RIGHT hand/wrist specifically.
+  * "both_wrists"     — held in or worn on BOTH wrists/hands (dual wield, shackles, bracelets on both arms).
+  * "prop_in_hand"    — held in a hand when the prompt clearly means a held prop but does NOT name which hand. Prefer a side-specific wrist value whenever the prompt names a side; only fall back to "prop_in_hand" when the side is genuinely ambiguous.
+
+Anchor_point selection rules:
+  - If the prompt describes a held prop and names a hand ("left", "right", "both"), pick the matching wrist value.
+  - If the prompt describes a held prop but does not name a side, use "prop_in_hand".
+  - If the prompt describes something worn on the head, use "head".
+  - If the prompt describes something worn on shoulders and names a side, use that shoulder value; if it spans both or is a cape/cloak/wings, use "both_shoulders".
+  - If the prompt describes a floating/ambient effect (particles, floating text, weather overlay), use "ambient".
+  - If none of the above apply, default to "background".
+  - anchor_point and anchor_type must be consistent: a "background" anchor_point implies anchor_type "background"; an "ambient" anchor_point implies anchor_type "ambient_floating"; wrist/shoulder/head anchor_points imply the appropriate non-background anchor_type.
+
 - Output valid JSON only. No markdown, no code fences, no explanation text."""
 
 
-def call_agent(user_prompt: str, timeout: int = 15) -> dict:
-    """
-    Sends the user's prompt to the local Ollama model and returns the
-    parsed JSON response as a dict.
-
-    Raises requests.RequestException on network/connection failure, and
-    ValueError if the model did not return valid JSON. Callers should
-    catch these and fall back gracefully (see agent/router.py).
-    """
-    full_prompt = f'{SYSTEM_PROMPT}\n\nUser prompt: "{user_prompt}"'
+def call_agent(user_prompt: str, timeout: int = 60) -> dict:
+    full_prompt = f'{SYSTEM_PROMPT}\n\nUser prompt: "{user_prompt}" /no_think /no_think'
 
     response = requests.post(
         OLLAMA_URL,
@@ -71,6 +55,7 @@ def call_agent(user_prompt: str, timeout: int = 15) -> dict:
             "prompt": full_prompt,
             "format": "json",
             "stream": False,
+            "think": False,
         },
         timeout=timeout,
     )

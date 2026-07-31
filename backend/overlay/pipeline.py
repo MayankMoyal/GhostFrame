@@ -133,7 +133,7 @@ def extract_keypoints(landmarks):
     return keypoints
 
 
-def build_overlay_payload(smooth_tf, lighting, resolved, fps):
+def build_overlay_payload(smooth_tf, lighting, resolved, fps, frame_w, frame_h):
     """Final overlay data dict, JSON-serializable as-is.
 
     Payload schema
@@ -149,7 +149,9 @@ def build_overlay_payload(smooth_tf, lighting, resolved, fps):
             "anchor_type": str,
             "fallback":    bool,
             "fps":         float,
-            "timestamp":   float
+            "timestamp":   float,
+            "frame_width": int,
+            "frame_height": int
         }
 
     ``points`` is a list of 1 entry for single/ambient anchors, or
@@ -165,7 +167,9 @@ def build_overlay_payload(smooth_tf, lighting, resolved, fps):
         "anchor_type": resolved["resolved_type"],
         "fallback":    resolved["fallback_applied"],
         "fps":         round(fps, 1),
-        "timestamp":   time.time(),
+        "timestamp":   round(time.time(), 3),
+        "frame_width": frame_w,
+        "frame_height": frame_h
     }
 
 
@@ -245,7 +249,7 @@ class PoseAnchorPipeline:
             fps = 1 / max(curr_time - self.prev_time, 1e-5)
             self.prev_time = curr_time
 
-            payload = build_overlay_payload(smooth_tf, lighting, resolved, fps)
+            payload = build_overlay_payload(smooth_tf, lighting, resolved, fps, w, h)
             
             segmentation_mask = None
             if detection_result.segmentation_masks:
