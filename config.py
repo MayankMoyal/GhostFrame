@@ -1,7 +1,7 @@
-"""Ghost Stream — Unified Configuration
+"""Ghost Frame — Unified Configuration
 
 Single source of truth for all ports, URLs, model paths, and runtime settings
-across the entire Ghost Stream project (cloud backend, local engine, frontend).
+across the entire Ghost Frame project (cloud backend, local engine, frontend).
 """
 import os
 from pathlib import Path
@@ -27,8 +27,8 @@ LOCAL_WS_URL = os.environ.get("GHOST_LOCAL_WS", f"ws://localhost:{LOCAL_PORT}")
 
 # ── Webcam Settings ────────────────────────────────────────────────────────
 CAMERA_INDEX = int(os.environ.get("GHOST_CAMERA", "0"))
-CAMERA_WIDTH = int(os.environ.get("GHOST_CAM_W", "1280"))
-CAMERA_HEIGHT = int(os.environ.get("GHOST_CAM_H", "720"))
+CAMERA_WIDTH = int(os.environ.get("GHOST_CAM_W", "640"))
+CAMERA_HEIGHT = int(os.environ.get("GHOST_CAM_H", "360"))
 MIRROR_FEED = os.environ.get("GHOST_MIRROR", "true").lower() == "true"
 
 # ── Model Paths ────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ POSE_LANDMARKER_PATH = os.environ.get(
 # Cloud Backend models
 GGUF_TRANSFORMER_PATH = os.environ.get(
     "ZIMAGE_GGUF_PATH",
-    str(BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q5_K_M.gguf")
+    str(BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q4_K_M.gguf")
 )
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:4b")

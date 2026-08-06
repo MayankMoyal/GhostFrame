@@ -1,4 +1,4 @@
-// Ghost Stream — OBS Overlay Engine
+// Ghost Frame — OBS Overlay Engine
 // Connects to:
 //   1. Local Engine (ws://localhost:8001/ws/anchor) for 30fps tracking data
 //   2. Cloud Backend (ws://<host>/ws/anchor) for new prop/clear events

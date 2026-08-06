@@ -1,4 +1,4 @@
-"""Ghost Stream — Unified Cloud Backend
+"""Ghost Frame — Unified Cloud Backend
 
 Merges:
 - Image generation (Z-Image-Turbo) from q8/backend
@@ -181,7 +181,7 @@ async def lifespan(app: FastAPI):
 
 
 # ── FastAPI App ───────────────────────────────────────────────────────────
-app = FastAPI(title="Ghost Stream Cloud Backend", lifespan=lifespan)
+app = FastAPI(title="Ghost Frame Cloud Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

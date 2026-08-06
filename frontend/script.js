@@ -1,9 +1,9 @@
-// Ghost Stream — Unified Dashboard Controller
+// Ghost Frame — Unified Dashboard Controller
 // Handles: Voice prompts, Text prompts, Custom prop uploads, OBS overlay clearing,
 //          Local Engine health monitoring
 
 // Default to localhost if opening the file directly, else use the host
-const BACKEND_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
+const BACKEND_BASE_URL = 'https://8000-01kyqb03qvahkp2vwnpvjd81y8.cloudspaces.litng.ai';
 const LOCAL_ENGINE_URL = 'http://localhost:8001';
 
 // ── Push to Local Engine (Browser-side relay) ────────────────────────────

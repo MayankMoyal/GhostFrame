@@ -10,7 +10,7 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 GGUF_TRANSFORMER_PATH = os.environ.get(
     "ZIMAGE_GGUF_PATH",
-    str(_BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q5_K_M.gguf"),
+    str(_BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q4_K_M.gguf"),
 )
 
 def load_pipeline():
