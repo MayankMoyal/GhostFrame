@@ -1,18 +1,33 @@
 """
-Agent client — MODEL: phi3 (Microsoft Phi-3-mini, 3.8B, ~3.9GB via Ollama)
+Agent client — MODEL: qwen3.5:4b (Alibaba Qwen3.5, 4.66B params, Q4_K_M, ~3.4GB via Ollama)
 
-This is the ORIGINAL agent model. Kept as client_1.py so it can be
-A/B tested against client_2.py (Qwen3-4B-Instruct-2507).
+Replaces qwen3.5:0.8b (kept as client_3.py) as the active agent model.
+This is the official `qwen3.5:4b` Ollama tag, which ships Q4_K_M-quantized
+by default -- no separate quantization step needed on our end, Ollama
+already serves it quantized.
 
-To use this model: rename this file to client.py (agent/router.py
-imports `from agent.client import call_agent`, so the active model
-is whichever file is currently named client.py).
+Why the step back up from 0.8B: 0.8B was flagged as an unverified risk
+specifically for is_safe judgment quality (see client_3.py's docstring --
+check_safety() in agent/safety.py is the ONLY safety gate in this
+pipeline, and router.py fails OPEN on error). 4B is a much smaller
+capability drop from the original qwen3:4b baseline (client_2.py) than
+0.8B was, while still being meaningfully smaller on disk than that
+original (3.4GB Q4_K_M here vs ~3.2GB actual VRAM for qwen3:4b -- similar
+footprint, newer model generation, same order of magnitude quality).
 
-Known issue with this model: at 3.9GB, it doesn't always fit fully on
-GPU alongside the Z-Image pipeline -- if free VRAM drops below ~3.9GB,
-Ollama silently splits it across CPU/GPU, which showed up as a 17.5s
-delay to evaluate a single 10-token prompt in testing. Run `ollama ps`
-after a call to confirm it's at "100% GPU", not a CPU/GPU split.
+Same thinking-mode note as before: Qwen3.5 defaults to thinking ON in
+Ollama. `"think": false` below turns it off -- do not remove this, or
+every call pays for a chain-of-thought block before the JSON answer.
+
+STILL WORTH DOING before fully trusting this in production: the same
+batch-test recommended for the 0.8B swap (client_3.py) applies here too --
+run a set of borderline/adversarial prompts through this model and
+sanity-check is_safe / safety_reason before relying on it unattended.
+4B narrows the risk relative to 0.8B, it doesn't eliminate the need to
+check.
+
+To roll back to 0.8B: rename client_3.py to client.py.
+To roll back to the original qwen3:4b: rename client_2.py to client.py.
 """
 
 import json
@@ -20,7 +35,7 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "phi3"
+MODEL_NAME = "qwen3:4b"
 
 SYSTEM_PROMPT = """You are an assistant embedded in a live AI image-generation pipeline for a livestreamer's OBS background.
 Given the user's raw prompt, respond with ONLY a single JSON object, no other text, using exactly these keys:
@@ -39,7 +54,7 @@ Rules:
 - Output valid JSON only. No markdown, no code fences, no explanation text."""
 
 
-def call_agent(user_prompt: str, timeout: int = 15) -> dict:
+def call_agent(user_prompt: str, timeout: int = 60) -> dict:
     """
     Sends the user's prompt to the local Ollama model and returns the
     parsed JSON response as a dict.
@@ -48,7 +63,7 @@ def call_agent(user_prompt: str, timeout: int = 15) -> dict:
     ValueError if the model did not return valid JSON. Callers should
     catch these and fall back gracefully (see agent/router.py).
     """
-    full_prompt = f'{SYSTEM_PROMPT}\n\nUser prompt: "{user_prompt}"'
+    full_prompt = f'{SYSTEM_PROMPT}\n\nUser prompt: "{user_prompt}" /no_think /no_think'
 
     response = requests.post(
         OLLAMA_URL,
@@ -57,6 +72,7 @@ def call_agent(user_prompt: str, timeout: int = 15) -> dict:
             "prompt": full_prompt,
             "format": "json",
             "stream": False,
+            "think": False,  # see module docstring -- do not remove
         },
         timeout=timeout,
     )

@@ -121,7 +121,7 @@ async def push_prop_to_local_engine(filename: str, anchor_type: str):
         resp = await run_in_threadpool(
             req.post,
             endpoint,
-            json={"image_url": image_url, "anchor_type": anchor_type},
+            json={"image_url": image_url, "anchor_type": anchor_type, "prop_category": anchor_type if anchor_type != "background" else ""},
             timeout=10,
         )
         if resp.ok:
@@ -293,7 +293,9 @@ async def generate(payload: GenerationRequest):
             "original_prompt": payload.prompt,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
+            "type": agent_result.get("type", "background"),
             "anchor_type": anchor_type,
+            "prop_category": agent_result.get("prop_category", ""),
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
@@ -383,7 +385,9 @@ async def generate_voice(
             "original_prompt": transcript,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
+            "type": agent_result.get("type", "background"),
             "anchor_type": anchor_type,
+            "prop_category": agent_result.get("prop_category", ""),
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
