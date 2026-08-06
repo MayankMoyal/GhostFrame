@@ -228,6 +228,14 @@ async def health():
     }
 
 
+@app.post("/heartbeat")
+async def heartbeat():
+    return {
+        "status": "ok",
+        "model_loaded": pipeline is not None,
+    }
+
+
 @app.post("/generate")
 async def generate(payload: GenerationRequest):
     """Text prompt → Agent → Z-Image-Turbo → Image."""
