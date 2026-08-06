@@ -3,7 +3,7 @@
 //          Local Engine health monitoring
 
 // Default to localhost if opening the file directly, else use the host
-const BACKEND_BASE_URL = 'https://8000-01kyqb03qvahkp2vwnpvjd81y8.cloudspaces.litng.ai';
+const BACKEND_BASE_URL = window.location.origin;
 const LOCAL_ENGINE_URL = 'http://localhost:8001';
 
 // ── Push to Local Engine (Browser-side relay) ────────────────────────────
