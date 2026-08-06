@@ -1,44 +1,67 @@
+import os
 from pathlib import Path
 from time import time
 
 import torch
-from diffusers import ZImagePipeline
-from torchao.quantization import quantize_, Int8WeightOnlyConfig
+from diffusers import ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig
+from transformers import AutoModel, BitsAndBytesConfig as TransformersBitsAndBytesConfig
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+GGUF_TRANSFORMER_PATH = os.environ.get(
+    "ZIMAGE_GGUF_PATH",
+    str(_BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q5_K_M.gguf"),
+)
 
 def load_pipeline():
-    print("Loading Z-Image-Turbo model...into memory")
+    # Resolve to absolute path (diffusers requires this for local GGUF files)
+    gguf_path = str(Path(GGUF_TRANSFORMER_PATH).resolve())
+
+    if not Path(gguf_path).exists():
+        raise FileNotFoundError(
+            f"GGUF transformer not found at: {gguf_path}\n"
+            f"Download it first with:  bash setup.sh"
+        )
+
+    print("Loading text encoder (Qwen3-4B) in 4-bit (NF4)...")
+    # NF4 4-bit is faster and more stable than INT8. Using bfloat16 compute dtype.
+    text_encoder_quant_config = TransformersBitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4"
+    )
+    text_encoder = AutoModel.from_pretrained(
+        "Tongyi-MAI/Z-Image-Turbo",
+        subfolder="text_encoder",
+        quantization_config=text_encoder_quant_config,
+        torch_dtype=torch.bfloat16,
+    )
+
+    print(f"Loading Z-Image-Turbo GGUF transformer from {gguf_path}...")
+    # compute_dtype=bfloat16 prevents the NaNs that cause black images
+    transformer = ZImageTransformer2DModel.from_single_file(
+        gguf_path,
+        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+        torch_dtype=torch.bfloat16,
+    )
+
+    print("Loading Z-Image-Turbo pipeline into memory...")
     pipe = ZImagePipeline.from_pretrained(
         "Tongyi-MAI/Z-Image-Turbo",
+        transformer=transformer,
+        text_encoder=text_encoder,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
     )
 
-    print("Applying INT8 weight-only quantization...")
-    quantize_(pipe.transformer, Int8WeightOnlyConfig())
-
-    type_counts = {}
-    for name, param in pipe.transformer.named_parameters():
-        t = type(param.data).__name__
-        type_counts[t] = type_counts.get(t, 0) + 1
-    print(f"[DIAGNOSTIC] transformer parameter type breakdown: {type_counts}")
-
-    # pipe.transformer.set_attention_backend("flash")  # disabled - flash-attn not installed
-
-    print("routing the model to GPU")
+    print("Routing the model to GPU...")
     pipe.to("cuda")
+    
+    # CRITICAL FIX FOR BLACK IMAGES:
+    # The VAE must decode in float32 to prevent NaNs in the final pixels
+    pipe.vae.to(torch.float32)
 
     print(f"[DIAGNOSTIC] VRAM allocated right after loading to GPU: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
-
-    # DISABLED for now (Option A) -- recompiling on every request because
-    # the Phi-3/Qwen agent rewrites each prompt to a different length,
-    # which changes the text-encoder output shape feeding the transformer's
-    # cross-attention -> shape mismatch -> full recompile per call
-    # (measured 5-10 min/generation with this on). Revisit as an isolated
-    # experiment (Option B: pad/truncate the tokenizer to a fixed length
-    # so the shape never changes, then re-enable).
-    # print("Compiling transformer with torch.compile (this makes the FIRST run slow, one-time cost)...")
-    # pipe.transformer = torch.compile(pipe.transformer, mode="default")
 
     print("Running throwaway warmup generation...")
     pipe(

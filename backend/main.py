@@ -1,56 +1,88 @@
+"""Ghost Stream — Unified Cloud Backend
+
+Merges:
+- Image generation (Z-Image-Turbo) from q8/backend
+- Voice STT (faster-whisper) from newver/stt
+- Agent routing (Ollama) from q8/backend/agent
+- OBS overlay WebSocket broadcasting
+- Event-driven prop hot-swap to Local Engine
+- Background removal (rembg) for generated props
+
+Endpoints:
+    GET  /health            — Server health check
+    POST /generate          — Text prompt → image generation
+    POST /generate-voice    — Audio blob → STT → image generation
+    POST /upload-prop       — Custom prop image upload
+    POST /clear-props       — Clear all props from OBS overlay
+    WS   /ws/anchor         — WebSocket for OBS overlay tracking + prop events
+    GET  /outputs/{file}    — Static file serving for generated images
+"""
 import asyncio
-import json
+import os
+import sys
 import tempfile
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
 from time import time
 from uuid import uuid4
-import os
-import cv2
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
-from starlette.websockets import WebSocketState
+
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from engine.zimage_turbo import generate_image, load_pipeline
 from agent.router import run_agent
 from agent.rewriter import get_rewritten_prompt
 from agent.safety import UnsafePromptError, check_safety
-from overlay.pipeline import PoseAnchorPipeline
 from stt.transcriber import load_whisper_model, transcribe_audio
-from postprocess.background_remover import remove_background, load_rembg_session
-from postprocess.prop_alignment import align_prop
 
+try:
+    from config import (
+        CLOUD_HOST, CLOUD_PORT, OUTPUT_DIR, LOCAL_API_URL,
+        WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE,
+    )
+except ImportError:
+    # Fallback defaults if config.py not accessible
+    CLOUD_HOST = "0.0.0.0"
+    CLOUD_PORT = 8000
+    OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
+    LOCAL_API_URL = "http://localhost:8001"
+    WHISPER_MODEL_SIZE = "base"
+    WHISPER_DEVICE = "cpu"
+    WHISPER_COMPUTE_TYPE = "int8"
 
-WEBCAM_INDEX = int(os.getenv("WEBCAM_INDEX", "1"))
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = PROJECT_ROOT / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Pipeline State ────────────────────────────────────────────────────────
 pipeline = None
 pipeline_lock = Lock()
-FRAME_INTERVAL_S = 1 / 30  # target ~30fps for overlay anchor stream
+
+# ── WebSocket Connections ─────────────────────────────────────────────────
+# All connected OBS overlay clients
+overlay_clients: list[WebSocket] = []
 
 
+# ── Pydantic Models ───────────────────────────────────────────────────────
 class GenerationRequest(BaseModel):
     prompt: str
     style: str = ""
-    remove_bg: bool = False
 
 
+# ── Helper Functions ──────────────────────────────────────────────────────
 def build_prompt(prompt: str, style: str) -> str:
     clean_prompt = prompt.strip()
     clean_style = style.strip()
-
     if not clean_style:
         return clean_prompt
-
     return f"{clean_prompt}, {clean_style} style"
 
 
@@ -59,41 +91,97 @@ def create_output_path() -> Path:
     return OUTPUT_DIR / filename
 
 
-async def _align_generated_prop(nobg_path: Path, anchor_type: str) -> dict:
-    """Run prop_alignment.align_prop() on a background-removed PNG and
-    overwrite it with the tight-cropped version.
+async def broadcast_to_overlays(message: dict):
+    """Send a message to all connected OBS overlay WebSocket clients."""
+    import json
+    dead = []
+    payload = json.dumps(message)
+    for ws in overlay_clients:
+        try:
+            await ws.send_text(payload)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in overlay_clients:
+            overlay_clients.remove(ws)
 
-    Raises HTTPException(500) if the generation had no visible content
-    after background removal — that's a bad generation, not something
-    to silently broadcast. Returns the grip fields for broadcast_msg.
-    """
-    rgba = Image.open(nobg_path).convert("RGBA")
-    result = await run_in_threadpool(align_prop, rgba, anchor_type)
 
-    if not result["valid"]:
-        raise HTTPException(
-            status_code=500,
-            detail="Generation produced no visible content after background removal.",
+async def push_prop_to_local_engine(filename: str, anchor_type: str):
+    """Event-driven: push new prop directly to the Local Engine (Port 8001)."""
+    import requests as req
+    try:
+        image_url = f"{CLOUD_API_URL}/outputs/{filename}"
+
+        # Route to the correct endpoint based on anchor type
+        if anchor_type == "background":
+            endpoint = f"{LOCAL_API_URL}/equip-background"
+        else:
+            endpoint = f"{LOCAL_API_URL}/equip"
+
+        resp = await run_in_threadpool(
+            req.post,
+            endpoint,
+            json={"image_url": image_url, "anchor_type": anchor_type},
+            timeout=10,
         )
+        if resp.ok:
+            print(f"[Event-Driven] {'Background' if anchor_type == 'background' else 'Prop'} pushed to Local Engine: {filename}")
+        else:
+            print(f"[Event-Driven] Local Engine rejected: {resp.status_code}")
+    except Exception as exc:
+        print(f"[Event-Driven] Could not reach Local Engine: {exc}")
 
-    result["image"].save(nobg_path)
-    return {
-        "grip_x": result["grip_x"],
-        "grip_y": result["grip_y"],
-        "intrinsic_angle_deg": result["intrinsic_angle_deg"],
-    }
+
+def remove_background_from_image(image_path: Path) -> Path:
+    """Remove background from a generated prop image using rembg."""
+    try:
+        from rembg import remove
+        from PIL import Image
+        import io
+
+        with open(image_path, "rb") as f:
+            input_data = f.read()
+
+        output_data = remove(input_data)
+
+        nobg_path = image_path.with_name(image_path.stem + "_nobg.png")
+        with open(nobg_path, "wb") as f:
+            f.write(output_data)
+
+        print(f"[rembg] Background removed: {nobg_path.name}")
+        return nobg_path
+    except Exception as exc:
+        print(f"[rembg] Failed: {exc}")
+        return image_path
 
 
+# ── Global URL for self-referencing ───────────────────────────────────────
+CLOUD_API_URL = f"http://localhost:{CLOUD_PORT}"
+
+
+# ── App Lifespan ──────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline
+
+    # Load Z-Image-Turbo pipeline
+    print("[Startup] Loading Z-Image-Turbo pipeline...")
     pipeline = load_pipeline()
-    load_whisper_model()  # ~1GB int8, stays resident alongside Z-Image-Turbo
-    load_rembg_session()
+
+    # Load Whisper STT model
+    print("[Startup] Loading Whisper STT model...")
+    load_whisper_model(
+        model_size=WHISPER_MODEL_SIZE,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE,
+    )
+
+    print("[Startup] All models loaded. Server ready!")
     yield
 
 
-app = FastAPI(title="GhostFrame Image Generation API", lifespan=lifespan)
+# ── FastAPI App ───────────────────────────────────────────────────────────
+app = FastAPI(title="Ghost Stream Cloud Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,9 +191,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve generated images
 app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 
+# Serve frontend files
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
+if FRONTEND_DIR.exists():
+    app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 
+
+# ── Exception Handlers ───────────────────────────────────────────────────
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(
@@ -122,32 +217,34 @@ async def validation_exception_handler(request, exc):
     )
 
 
+# ── Endpoints ─────────────────────────────────────────────────────────────
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_loaded": pipeline is not None}
+    return {
+        "status": "ok",
+        "model_loaded": pipeline is not None,
+        "service": "ghost-stream-cloud",
+    }
 
 
 @app.post("/generate")
 async def generate(payload: GenerationRequest):
+    """Text prompt → Agent → Z-Image-Turbo → Image."""
     if not payload.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
 
-    # Agent step: every prompt (typed or, later, voice) passes through the
-    # local agent first for rewriting + safety check + style/anchor
-    # tagging. Which model runs here is whatever agent/client.py currently
-    # points to (see agent/README.md) -- Phi-3 and Qwen3-4B-Instruct-2507
-    # are both drop-in candidates. Runs in a threadpool since it's a
-    # blocking HTTP call to Ollama.
+    # Agent step: rewrite + safety check + style/anchor tagging
     agent_result = await run_in_threadpool(run_agent, payload.prompt)
-    
+
     try:
         check_safety(agent_result)
     except UnsafePromptError as exc:
         raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
-    
+
     rewritten_prompt = get_rewritten_prompt(agent_result, payload.prompt)
 
     output_path = create_output_path()
@@ -168,177 +265,77 @@ async def generate(payload: GenerationRequest):
             detail="Inference finished, but the output image was not saved.",
         )
 
-    # Optional background removal (runs on CPU, zero VRAM cost).
-    nobg_filename = None
-    grip_fields = {}
-    if payload.remove_bg:
-        nobg_path = output_path.with_stem(output_path.stem + "_nobg")
-        try:
-            await run_in_threadpool(remove_background, output_path, nobg_path)
-            nobg_filename = nobg_path.name
-        except Exception as exc:
-            print(f"[BG Removal] Warning — failed, returning original: {exc}")
+    anchor_type = agent_result.get("anchor_type", "background")
 
-        if nobg_filename:
-            # Tight-crop to the object's real alpha content and compute an
-            # accurate grip point (+ intrinsic tilt for held props) instead
-            # of trusting overlay.js's static ZONE_GRIP fraction against a
-            # padded canvas. Raises 500 if the crop is empty.
-            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_point", "background"))
+    # If it's a prop (not background), remove background
+    filename_nobg = None
+    if anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+        filename_nobg = nobg_path.name
 
-    # Broadcast new image to OBS overlay websockets (always, regardless of remove_bg)
-    broadcast_msg = {
+    # Broadcast to OBS overlay
+    broadcast_filename = filename_nobg or output_path.name
+    await broadcast_to_overlays({
         "type": "new_prop",
-        "filename": nobg_filename if nobg_filename else output_path.name,
-        "anchor_type": agent_result.get("anchor_point", "background"),
-        **grip_fields,
-    }
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
+        "filename": broadcast_filename,
+        "anchor_type": anchor_type,
+    })
+
+    # Event-driven: push prop directly to Local Engine
+    asyncio.create_task(push_prop_to_local_engine(broadcast_filename, anchor_type))
 
     return {
         "status": "success",
         "filename": output_path.name,
-        "filename_nobg": nobg_filename,
+        "filename_nobg": filename_nobg,
         "metrics": metrics,
         "agent": {
             "original_prompt": payload.prompt,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
-            "anchor_type": agent_result.get("anchor_point", "background"),
+            "anchor_type": anchor_type,
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
-
-connected_websockets = set()
-
-@app.websocket("/ws/anchor")
-async def anchor_stream(websocket: WebSocket, anchor_type: str = "both_shoulders"):
-    await websocket.accept()
-    connected_websockets.add(websocket)
-
-    pose_pipeline = PoseAnchorPipeline(anchor_type=anchor_type)
-    # Smart camera selection: try WEBCAM_INDEX first, then fallback to 0-4
-    preferred_index = WEBCAM_INDEX
-    indices_to_try = [preferred_index] + [i for i in range(5) if i != preferred_index]
-    
-    cap = None
-    webcam_ok = False
-    
-    for idx in indices_to_try:
-        temp_cap = cv2.VideoCapture(idx)
-        if temp_cap.isOpened():
-            # Verify we can actually read a frame (some virtual cameras open but fail to read)
-            ret, _ = temp_cap.read()
-            if ret:
-                cap = temp_cap
-                webcam_ok = True
-                print(f"[INFO] Successfully connected to webcam at index {idx}")
-                break
-        temp_cap.release()
-
-    if not webcam_ok:
-        print("[WARNING] Could not open ANY webcam for tracking! Poses will not update, but broadcasts will still work.")
-        # We don't close the websocket so that it can still receive new_prop broadcasts.
-
-    async def receive_control_messages():
-        """Listen for client messages (e.g. anchor_type switches) without
-        blocking the frame loop — runs concurrently as its own task."""
-        try:
-            while True:
-                raw = await websocket.receive_text()
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                new_type = msg.get("anchor_type")
-                if new_type:
-                    pose_pipeline.set_anchor_type(new_type)
-        except WebSocketDisconnect:
-            pass
-
-    control_task = asyncio.create_task(receive_control_messages())
-
-    try:
-        while True:
-            if websocket.client_state != WebSocketState.CONNECTED:
-                break
-
-            if not webcam_ok:
-                await asyncio.sleep(1.0)
-                continue
-
-            ret, frame = cap.read()
-            if not ret:
-                await asyncio.sleep(FRAME_INTERVAL_S)
-                continue
-
-            payload, _keypoints, _resolved, _mask = await asyncio.to_thread(
-                pose_pipeline.process_frame, frame
-            )
-
-            if payload is not None:
-                await websocket.send_json(payload)
-
-            await asyncio.sleep(FRAME_INTERVAL_S)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        connected_websockets.discard(websocket)
-        control_task.cancel()
-        cap.release()
 
 
 @app.post("/generate-voice")
 async def generate_voice(
     audio: UploadFile = File(...),
     style: str = Form(""),
-    remove_bg: bool = Form(True),
+    remove_bg: str = Form("true"),
 ):
-    """Full voice-to-image pipeline.
-
-    Accepts an audio file (any format FFmpeg can decode — WAV, WebM,
-    OGG, MP3, etc.), transcribes it to text, runs it through the agent
-    for rewriting + safety, generates an image, and optionally removes
-    the background.
-
-    This is the primary endpoint for the streamer's voice prompter flow.
-    """
+    """Audio blob → Whisper STT → Agent → Z-Image-Turbo → Image."""
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Model is still loading. Try again shortly.")
 
-    # 1. Save uploaded audio to a temporary file so faster-whisper can
-    #    read it from disk (it needs a file path, not a stream).
-    suffix = Path(audio.filename).suffix if audio.filename else ".webm"
+    # Save the uploaded audio to a temp file
+    suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await audio.read())
-        audio_tmp_path = Path(tmp.name)
+        content = await audio.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
 
-    # 2. Speech-to-text: transcribe the audio to a raw text prompt.
     try:
-        transcript = await run_in_threadpool(transcribe_audio, audio_tmp_path)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
+        # Step 1: Transcribe audio to text
+        transcript = await run_in_threadpool(transcribe_audio, tmp_path)
     finally:
-        audio_tmp_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
 
-    if not transcript.strip():
+    if not transcript or not transcript.strip():
         raise HTTPException(status_code=400, detail="Could not transcribe any speech from the audio.")
 
-    # 3. Agent step: rewrite + safety + style/anchor tagging.
+    # Step 2: Run agent (rewrite + safety + anchor detection)
     agent_result = await run_in_threadpool(run_agent, transcript)
-    
+
     try:
         check_safety(agent_result)
     except UnsafePromptError as exc:
         raise HTTPException(status_code=400, detail=f"Prompt rejected: {exc.reason}")
-    
+
     rewritten_prompt = get_rewritten_prompt(agent_result, transcript)
 
-    # 4. Image generation with Z-Image-Turbo.
+    # Step 3: Generate image
     output_path = create_output_path()
     final_prompt = build_prompt(rewritten_prompt, style)
 
@@ -357,112 +354,122 @@ async def generate_voice(
             detail="Inference finished, but the output image was not saved.",
         )
 
-    # 5. Optional background removal (CPU-based, zero VRAM cost).
-    nobg_filename = None
-    grip_fields = {}
-    if remove_bg:
-        nobg_path = output_path.with_stem(output_path.stem + "_nobg")
-        try:
-            await run_in_threadpool(remove_background, output_path, nobg_path)
-            nobg_filename = nobg_path.name
-        except Exception as exc:
-            print(f"[BG Removal] Warning — failed, returning original: {exc}")
+    anchor_type = agent_result.get("anchor_type", "background")
 
-        if nobg_filename:
-            grip_fields = await _align_generated_prop(nobg_path, agent_result.get("anchor_point", "background"))
+    # Step 4: Optional background removal for props
+    filename_nobg = None
+    if remove_bg.lower() == "true" and anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+        filename_nobg = nobg_path.name
 
-    # 6. Broadcast the new prop to any active OBS Overlays
-    broadcast_msg = {
+    # Broadcast to OBS overlay
+    broadcast_filename = filename_nobg or output_path.name
+    await broadcast_to_overlays({
         "type": "new_prop",
-        "filename": nobg_filename if nobg_filename else output_path.name,
-        "anchor_type": agent_result.get("anchor_point", "background"),
-        **grip_fields,
-    }
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
+        "filename": broadcast_filename,
+        "anchor_type": anchor_type,
+    })
+
+    # Event-driven: push prop directly to Local Engine
+    asyncio.create_task(push_prop_to_local_engine(broadcast_filename, anchor_type))
 
     return {
         "status": "success",
         "transcript": transcript,
         "filename": output_path.name,
-        "filename_nobg": nobg_filename,
+        "filename_nobg": filename_nobg,
         "metrics": metrics,
         "agent": {
             "original_prompt": transcript,
             "final_prompt": final_prompt,
             "style_detected": agent_result.get("style", ""),
-            "anchor_type": agent_result.get("anchor_point", "background"),
+            "anchor_type": anchor_type,
             "agent_ok": agent_result.get("agent_ok", False),
         },
     }
+
 
 @app.post("/upload-prop")
 async def upload_prop(
     file: UploadFile = File(...),
     anchor_type: str = Form("right_wrist"),
 ):
-    """Upload a custom image to be used as a prop immediately.
-    
-    The backend will save it, remove its background, align it, 
-    and broadcast it to the overlay just like a generated image.
-    """
-    output_path = create_output_path()
-    
-    # Read the uploaded file
-    file_bytes = await file.read()
-    with open(output_path, "wb") as f:
-        f.write(file_bytes)
+    """Upload a custom prop image and broadcast to OBS overlay."""
+    content = await file.read()
+    filename = f"custom_{int(time())}_{uuid4().hex[:8]}.png"
+    save_path = OUTPUT_DIR / filename
 
-    # Always attempt background removal and alignment on custom uploads
-    nobg_path = output_path.with_stem(output_path.stem + "_nobg")
-    nobg_filename = None
-    grip_fields = {}
-    
-    try:
-        await run_in_threadpool(remove_background, output_path, nobg_path)
-        nobg_filename = nobg_path.name
-    except Exception as exc:
-        print(f"[BG Removal] Warning — failed for uploaded prop: {exc}")
-        
-    if nobg_filename:
-        grip_fields = await _align_generated_prop(nobg_path, anchor_type)
-        
-    broadcast_msg = {
+    # Remove background from the uploaded prop
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+
+    # Broadcast to OBS overlay
+    await broadcast_to_overlays({
         "type": "new_prop",
-        "filename": nobg_filename or output_path.name,
+        "filename": nobg_path.name,
         "anchor_type": anchor_type,
-        **grip_fields
-    }
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
+    })
+
+    # Event-driven: push directly to Local Engine
+    asyncio.create_task(push_prop_to_local_engine(nobg_path.name, anchor_type))
 
     return {
-        "filename": output_path.name,
-        "filename_nobg": nobg_filename,
-        "anchor_type": anchor_type
+        "status": "success",
+        "filename": nobg_path.name,
+        "anchor_type": anchor_type,
     }
+
 
 @app.post("/clear-props")
 async def clear_props():
-    """Clear all props from the active overlays."""
-    broadcast_msg = {"type": "new_prop", "action": "clear"}
-    for ws in list(connected_websockets):
-        try:
-            await ws.send_json(broadcast_msg)
-        except Exception:
-            pass
-    return {"status": "success"}
+    """Clear all props from the OBS overlay."""
+    await broadcast_to_overlays({
+        "type": "new_prop",
+        "action": "clear",
+    })
 
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
-app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+    # Also tell local engine to clear
+    import requests as req
+    try:
+        await run_in_threadpool(
+            req.post, f"{LOCAL_API_URL}/clear", timeout=5
+        )
+    except Exception:
+        pass
 
+    return {"status": "ok", "message": "Props cleared."}
+
+
+@app.websocket("/ws/anchor")
+async def ws_anchor(websocket: WebSocket):
+    """WebSocket endpoint for OBS overlay clients.
+
+    Receives anchor preference and broadcasts prop events.
+    Tracking data is streamed directly from the Local Engine
+    (Port 8001) for minimum latency — this endpoint only handles
+    prop change events.
+    """
+    await websocket.accept()
+    overlay_clients.append(websocket)
+    print(f"[WebSocket] Overlay client connected. Total: {len(overlay_clients)}")
+
+    try:
+        while True:
+            # Keep connection alive, receive anchor preference updates
+            data = await websocket.receive_text()
+            # Client may send anchor preferences — we don't need to process them here
+            # since tracking data flows directly from local engine
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if websocket in overlay_clients:
+            overlay_clients.remove(websocket)
+        print(f"[WebSocket] Overlay client disconnected. Total: {len(overlay_clients)}")
+
+
+# ── Entry Point ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=CLOUD_HOST, port=CLOUD_PORT)

@@ -19,4 +19,3 @@ def check_safety(agent_result: dict) -> None:
     if agent_result.get("is_safe") is False:
         reason = agent_result.get("safety_reason") or "Prompt flagged as unsafe."
         raise UnsafePromptError(reason)
-

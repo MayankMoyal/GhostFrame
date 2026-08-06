@@ -1,9 +1,35 @@
+// Ghost Stream — Unified Dashboard Controller
+// Handles: Voice prompts, Text prompts, Custom prop uploads, OBS overlay clearing,
+//          Local Engine health monitoring
+
 // Default to localhost if opening the file directly, else use the host
 const BACKEND_BASE_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : window.location.origin;
+const LOCAL_ENGINE_URL = 'http://localhost:8001';
 
+// ── Push to Local Engine (Browser-side relay) ────────────────────────────
+// Instead of relying on Cloud→Local reverse tunnel, the browser
+// (which is on the same machine as the Local Engine) forwards directly.
+async function pushToLocalEngine(filename, anchorType) {
+    const imageUrl = `${BACKEND_BASE_URL}/outputs/${filename}`;
+    const endpoint = anchorType === 'background'
+        ? `${LOCAL_ENGINE_URL}/equip-background`
+        : `${LOCAL_ENGINE_URL}/equip`;
+    try {
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_url: imageUrl, anchor_type: anchorType }),
+        });
+        const result = await resp.json();
+        console.log(`[Dashboard] Pushed ${anchorType} to Local Engine:`, result);
+    } catch (err) {
+        console.warn('[Dashboard] Could not reach Local Engine:', err);
+    }
+}
+
+// ── Utility Functions ────────────────────────────────────────────────────
 function updateClock() {
     const now = new Date();
-
     document.getElementById("date").textContent = now.toLocaleDateString();
     document.getElementById("time").textContent = now.toLocaleTimeString();
 }
@@ -17,10 +43,7 @@ function setText(id, value) {
 
 function setPipelineStep(id, value, active = false) {
     const element = document.getElementById(id);
-    if (!element) {
-        return;
-    }
-
+    if (!element) return;
     element.textContent = value;
     element.classList.toggle("active", active);
 }
@@ -77,6 +100,24 @@ function setPreviewImage(imageUrl, promptText) {
     previewBox.appendChild(image);
 }
 
+function resetPreview() {
+    document.querySelector(".preview-box").innerHTML = `
+        <div class="preview-placeholder">
+            <p>No image generated yet</p>
+            <span>Your generated image will appear here.</span>
+        </div>
+    `;
+}
+
+function resetPipeline() {
+    setPipelineStep("step1", "Waiting for prompt");
+    setPipelineStep("step2", "Model ready");
+    setPipelineStep("step3", "Idle");
+    setPipelineStep("step4", "Image not rendered");
+    setPipelineStep("step5", "Ready");
+}
+
+// ── Recent Generations ──────────────────────────────────────────────────
 const recentGenerations = [];
 
 function addToRecentGenerations(imageUrl, promptText) {
@@ -110,23 +151,84 @@ function renderRecentGenerations() {
     });
 }
 
-function resetPreview() {
-    document.querySelector(".preview-box").innerHTML = `
-        <div class="preview-placeholder">
-            <p>No image generated yet</p>
-            <span>Your generated image will appear here.</span>
-        </div>
-    `;
+// ── Text Prompt Generation ──────────────────────────────────────────────
+async function generateImage() {
+    const generateBtn = document.getElementById("generate");
+    const promptInput = document.getElementById("prompt");
+    const styleSelect = document.getElementById("style");
+
+    const prompt = promptInput.value.trim();
+    const style = styleSelect.value.trim();
+
+    if (!prompt) {
+        setText("analysis", "Prompt cannot be empty.");
+        setPreviewError("Please enter an image prompt before generating.");
+        return;
+    }
+
+    generateBtn.textContent = "Generating...";
+    generateBtn.disabled = true;
+
+    setText("analysis", "Processing");
+    setText("sceneType", "Detecting");
+    setText("imageStyle", style || "-");
+    setText("lighting", "Analyzing");
+    setText("timeEstimate", "Running");
+    setText("vramUsage", "Measuring");
+
+    setPipelineStep("step1", "Prompt received", true);
+    setPipelineStep("step2", "Z-Image-Turbo loaded", true);
+    setPipelineStep("step3", "Running inference", true);
+    setPipelineStep("step4", "Rendering image", true);
+    setPipelineStep("step5", "Waiting for output");
+    setPreviewLoading("Generating image...");
+
+    try {
+        const response = await fetch(`${BACKEND_BASE_URL}/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt, style }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.message || data.detail || `HTTP ${response.status}`);
+        }
+
+        if (!data.filename) {
+            throw new Error("The backend did not return an output filename.");
+        }
+
+        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename_nobg || data.filename}`;
+        setPreviewImage(imageUrl, prompt);
+        addToRecentGenerations(imageUrl, prompt);
+
+        setText("analysis", data.agent?.final_prompt || "Completed");
+        setText("sceneType", `Anchor: ${data.agent?.anchor_type || "background"}`);
+        setText("imageStyle", data.agent?.style_detected || style);
+        setText("lighting", "Turbo guidance");
+        setText("timeEstimate", data.metrics?.latency_seconds ? `${data.metrics.latency_seconds} sec` : "Complete");
+        setText("vramUsage", data.metrics?.peak_vram_gb ? `${data.metrics.peak_vram_gb} GB` : "-");
+
+        setPipelineStep("step4", "Image rendered", true);
+        setPipelineStep("step5", "Sent to OBS", true);
+
+        // Forward to Local Engine directly (no reverse tunnel needed)
+        const anchorType = data.agent?.anchor_type || 'background';
+        const pushFilename = data.filename_nobg || data.filename;
+        pushToLocalEngine(pushFilename, anchorType);
+    } catch (error) {
+        setText("analysis", error.message);
+        setPipelineStep("step5", "Error");
+        setPreviewError(error.message);
+    } finally {
+        generateBtn.textContent = "Generate Image";
+        generateBtn.disabled = false;
+    }
 }
 
-function resetPipeline() {
-    setPipelineStep("step1", "Waiting for prompt");
-    setPipelineStep("step2", "Model ready");
-    setPipelineStep("step3", "Idle");
-    setPipelineStep("step4", "Image not rendered");
-    setPipelineStep("step5", "Ready");
-}
-
+// ── Voice Prompt Generation ─────────────────────────────────────────────
 async function sendVoicePrompt(audioBlob) {
     const styleSelect = document.getElementById("style");
     const style = styleSelect.value.trim();
@@ -166,30 +268,26 @@ async function sendVoicePrompt(audioBlob) {
             throw new Error("The backend did not return an output filename.");
         }
 
-        // The API returns the transcript, we can show it
         const promptText = data.transcript || "Voice Prompt";
-
         const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename_nobg || data.filename}`;
         setPreviewImage(imageUrl, promptText);
         addToRecentGenerations(imageUrl, promptText);
 
-        // Reset mic status to ready after image is shown
         micStatus.textContent = "Ready";
-        micStatus.style.color = "#4ADE80"; // green
+        micStatus.style.color = "#4ADE80";
         setText("analysis", `Transcript: "${promptText}"`);
         setText("sceneType", `Anchor: ${data.agent?.anchor_type || "background"}`);
         setText("lighting", "Turbo guidance");
-        setText(
-            "timeEstimate",
-            data.metrics?.latency_seconds ? `${data.metrics.latency_seconds} sec` : "Complete"
-        );
-        setText(
-            "vramUsage",
-            data.metrics?.peak_vram_gb ? `${data.metrics.peak_vram_gb} GB` : "-"
-        );
+        setText("timeEstimate", data.metrics?.latency_seconds ? `${data.metrics.latency_seconds} sec` : "Complete");
+        setText("vramUsage", data.metrics?.peak_vram_gb ? `${data.metrics.peak_vram_gb} GB` : "-");
 
         setPipelineStep("step4", "Image rendered", true);
         setPipelineStep("step5", "Sent to OBS Overlay", true);
+
+        // Forward to Local Engine directly (no reverse tunnel needed)
+        const anchorType = data.agent?.anchor_type || 'background';
+        const pushFilename = data.filename_nobg || data.filename;
+        pushToLocalEngine(pushFilename, anchorType);
     } catch (error) {
         setText("analysis", error.message);
         setPipelineStep("step5", "Error");
@@ -197,7 +295,7 @@ async function sendVoicePrompt(audioBlob) {
     }
 }
 
-// === MEDIA RECORDER LOGIC ===
+// ── Media Recorder (Push-to-Talk) ───────────────────────────────────────
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
@@ -207,17 +305,16 @@ const micStatus = document.getElementById("micStatus");
 async function setupAudio() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Try webm first, fallback to standard
-        const options = MediaRecorder.isTypeSupported('audio/webm') 
-            ? { mimeType: 'audio/webm' } 
+        const options = MediaRecorder.isTypeSupported('audio/webm')
+            ? { mimeType: 'audio/webm' }
             : undefined;
-            
+
         mediaRecorder = new MediaRecorder(stream, options);
-        
+
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) audioChunks.push(event.data);
         };
-        
+
         mediaRecorder.onstop = () => {
             const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
             sendVoicePrompt(audioBlob);
@@ -235,8 +332,8 @@ function startRecording() {
     isRecording = true;
     audioChunks = [];
     mediaRecorder.start();
-    
-    micBtn.style.background = "#ef4444"; // red
+
+    micBtn.style.background = "#ef4444";
     micBtn.textContent = "🎙️ Recording... Release to send";
     micStatus.textContent = "Listening...";
 }
@@ -245,23 +342,20 @@ function stopRecording() {
     if (!mediaRecorder || !isRecording) return;
     isRecording = false;
     mediaRecorder.stop();
-    
-    micBtn.style.background = "#3b82f6"; // blue
+
+    micBtn.style.background = "";
     micBtn.textContent = "🎤 Hold Space or Click to Speak";
     micStatus.textContent = "Processing...";
 }
 
-// Request permissions immediately
 setupAudio();
 
-// Mouse events
 micBtn.addEventListener("mousedown", startRecording);
 micBtn.addEventListener("mouseup", stopRecording);
-micBtn.addEventListener("mouseleave", stopRecording); // if drag out
+micBtn.addEventListener("mouseleave", stopRecording);
 
-// Keyboard events (Spacebar)
 window.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !e.repeat && document.activeElement !== document.getElementById('style')) {
+    if (e.code === "Space" && !e.repeat && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
         e.preventDefault();
         startRecording();
     }
@@ -272,33 +366,20 @@ window.addEventListener("keyup", (e) => {
     }
 });
 
-updateClock();
-setInterval(updateClock, 1000);
-resetPipeline();
-
-document.getElementById("clearPreview").addEventListener("click", () => {
-    resetPreview();
-    // Also tell backend to clear OBS overlays
-    fetch(`${BACKEND_BASE_URL}/clear-props`, { method: "POST" }).catch(console.error);
-});
-
-// === CUSTOM PROP UPLOAD LOGIC ===
+// ── Custom Prop Upload ──────────────────────────────────────────────────
 const propUploadBtn = document.getElementById("propUploadBtn");
 const propUploadInput = document.getElementById("propUploadInput");
 const uploadAnchorSelect = document.getElementById("uploadAnchor");
 
 if (propUploadBtn && propUploadInput) {
-    propUploadBtn.addEventListener("click", () => {
-        propUploadInput.click();
-    });
+    propUploadBtn.addEventListener("click", () => propUploadInput.click());
 
     propUploadInput.addEventListener("change", async (event) => {
         const file = event.target.files[0];
         if (!file) return;
 
         const anchorType = uploadAnchorSelect.value;
-        
-        // Reset UI somewhat
+
         setText("analysis", `Uploading custom prop...`);
         setText("sceneType", `Anchor: ${anchorType}`);
         setPreviewLoading("Uploading and processing custom prop...");
@@ -322,18 +403,27 @@ if (propUploadBtn && propUploadInput) {
             const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
             setPreviewImage(imageUrl, "Custom Uploaded Prop");
             addToRecentGenerations(imageUrl, "Custom Upload");
-            
-            setText("analysis", "Custom prop processed and broadcast successfully.");
 
+            setText("analysis", "Custom prop processed and broadcast successfully.");
         } catch (error) {
             setText("analysis", error.message);
             setPreviewError(error.message);
         } finally {
-            propUploadInput.value = ""; // Reset file input
+            propUploadInput.value = "";
         }
     });
 }
 
+// ── Clear Props ─────────────────────────────────────────────────────────
+document.getElementById("clearPreview").addEventListener("click", () => {
+    resetPreview();
+    fetch(`${BACKEND_BASE_URL}/clear-props`, { method: "POST" }).catch(console.error);
+});
+
+// ── Generate Button ─────────────────────────────────────────────────────
+document.getElementById("generate").addEventListener("click", generateImage);
+
+// ── Sidebar Toggle ──────────────────────────────────────────────────────
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebarToggle");
 
@@ -342,3 +432,31 @@ if (sidebar && sidebarToggle) {
         sidebar.classList.toggle("collapsed");
     });
 }
+
+// ── Local Engine Health Check ───────────────────────────────────────────
+const engineDot = document.getElementById("engineDot");
+const engineStatusEl = document.getElementById("engineStatus");
+
+async function checkEngineHealth() {
+    try {
+        const resp = await fetch(`${LOCAL_ENGINE_URL}/health`, { signal: AbortSignal.timeout(3000) });
+        const data = await resp.json();
+        if (data.status === "ok") {
+            engineDot.className = "status-dot online";
+            engineStatusEl.textContent = `Local Engine: 🟢 ${data.fps} FPS`;
+        } else {
+            engineDot.className = "status-dot starting";
+            engineStatusEl.textContent = "Local Engine: 🟡 Starting...";
+        }
+    } catch {
+        engineDot.className = "status-dot offline";
+        engineStatusEl.textContent = "Local Engine: 🔴 Offline";
+    }
+}
+
+// ── Initialize ──────────────────────────────────────────────────────────
+updateClock();
+setInterval(updateClock, 1000);
+resetPipeline();
+checkEngineHealth();
+setInterval(checkEngineHealth, 5000);
