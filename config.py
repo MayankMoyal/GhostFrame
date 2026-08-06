@@ -49,10 +49,10 @@ POSE_LANDMARKER_PATH = os.environ.get(
 # Cloud Backend models
 GGUF_TRANSFORMER_PATH = os.environ.get(
     "ZIMAGE_GGUF_PATH",
-    str(BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q4_K_M.gguf")
+    str(BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q5_K_M.gguf")
 )
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "command-r:7b")
 
 # Whisper STT
 WHISPER_MODEL_SIZE = os.environ.get("GHOST_WHISPER_MODEL", "base")
