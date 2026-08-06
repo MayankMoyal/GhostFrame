@@ -1,5 +1,5 @@
 """
-Agent client — MODEL: command-r:7b (Cohere Command-R, 7B params, Q4_K_M via Ollama)
+Agent client — MODEL: command-r7b (Cohere Command-R, 7B params, Q4_K_M via Ollama)
 
 Purpose-built by Cohere for agentic tasks, tool-calling, and structured JSON output.
 This model excels at:
@@ -11,8 +11,6 @@ This model excels at:
 
 VRAM: ~4.5GB Q4 — fits comfortably alongside Z-Image-Turbo (~10GB) on a 16GB T4.
 Speed: ~25 tokens/sec on T4 — well under the 2-second response target.
-
-To roll back to qwen3.5:4b: rename client.py (the old one) back.
 """
 
 import json
@@ -20,7 +18,7 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "command-r:7b"
+MODEL_NAME = "command-r7b"
 
 SYSTEM_PROMPT = """You are an AI agent embedded in "Ghost Frame" — a real-time AI prop and background system for livestreamers. When the user speaks or types a prompt, you MUST analyze it and return ONLY a single JSON object with exactly these keys:
 
