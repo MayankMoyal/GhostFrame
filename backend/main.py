@@ -275,27 +275,33 @@ async def generate(payload: GenerationRequest):
 
     anchor_type = agent_result.get("anchor_type", "background")
 
-    # If it's a prop (not background), remove background
-    filename_nobg = None
-    if anchor_type != "background":
-        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
-        filename_nobg = nobg_path.name
+    # ── Async background removal + push ──────────────────────────────────
+    # Return the response IMMEDIATELY with the original image.
+    # rembg runs in the background and pushes the nobg version to Local Engine
+    # when ready. This cuts ~6-8s off the perceived response time.
+    async def _bg_remove_and_push():
+        try:
+            if anchor_type != "background":
+                nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+                push_filename = nobg_path.name
+            else:
+                push_filename = output_path.name
 
-    # Broadcast to OBS overlay
-    broadcast_filename = filename_nobg or output_path.name
-    await broadcast_to_overlays({
-        "type": "new_prop",
-        "filename": broadcast_filename,
-        "anchor_type": anchor_type,
-    })
+            await broadcast_to_overlays({
+                "type": "new_prop",
+                "filename": push_filename,
+                "anchor_type": anchor_type,
+            })
+            await push_prop_to_local_engine(push_filename, anchor_type)
+        except Exception as exc:
+            print(f"[Background] rembg/push failed: {exc}")
 
-    # Event-driven: push prop directly to Local Engine
-    asyncio.create_task(push_prop_to_local_engine(broadcast_filename, anchor_type))
+    asyncio.create_task(_bg_remove_and_push())
 
     return {
         "status": "success",
         "filename": output_path.name,
-        "filename_nobg": filename_nobg,
+        "filename_nobg": None,  # Will be ready asynchronously
         "metrics": metrics,
         "agent": {
             "original_prompt": payload.prompt,

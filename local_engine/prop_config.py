@@ -32,7 +32,7 @@ PROFILES = {
         category=PropCategory.HAND_HELD, pivot_strategy="handle_bottom",
         pivot_default=(0.5, 0.95), 
         body_scale_ref="palm_width", prop_scale_ref="handle_width", 
-        scale_multiplier=1.0,  # Dynamic scaling based on hand size
+        scale_multiplier=3.5,  # AI-generated props have large canvases — needs higher multiplier
         rotation_mode="hand_vector", auto_orient="vertical_handle_down", z_index=1),
     PropCategory.SHIELD: AttachmentProfile(
         category=PropCategory.SHIELD, pivot_strategy="center",
