@@ -291,6 +291,8 @@ async def generate(payload: GenerationRequest):
                 "type": "new_prop",
                 "filename": push_filename,
                 "anchor_type": anchor_type,
+                "metrics": metrics,
+                "agent": agent_result,
             })
             await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
@@ -386,6 +388,8 @@ async def generate_voice(
                 "type": "new_prop",
                 "filename": push_filename,
                 "anchor_type": anchor_type,
+                "metrics": metrics,
+                "agent": agent_result,
             })
             await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
@@ -433,6 +437,8 @@ async def upload_prop(
                 "type": "new_prop",
                 "filename": nobg_path.name,
                 "anchor_type": anchor_type,
+                "metrics": {"latency_seconds": 0, "peak_vram_gb": 0},
+                "agent": {"anchor_type": anchor_type, "type": "prop", "original_prompt": "Custom Upload"},
             })
             await push_prop_to_local_engine(nobg_path.name, anchor_type)
         except Exception as exc:

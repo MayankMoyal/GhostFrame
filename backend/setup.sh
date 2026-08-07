@@ -9,8 +9,9 @@ echo ""
 
 # ── 1. System Dependencies ─────────────────────────────────
 echo "=== [1/7] System Dependencies ==="
-apt-get update -qq && apt-get install -y -qq ffmpeg > /dev/null 2>&1 || true
+sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg zstd > /dev/null 2>&1 || true
 echo "    ✓ ffmpeg checked"
+echo "    ✓ zstd checked"
 
 # ── 2. PyTorch with CUDA ───────────────────────────────────
 echo "=== [2/7] PyTorch with CUDA ==="
