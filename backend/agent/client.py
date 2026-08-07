@@ -1,5 +1,5 @@
 """
-Agent client — MODEL: command-r7b (Cohere Command-R, 7B params, Q4_K_M via Ollama)
+Agent client — MODEL: command-r7b (Cohere Command-R, 7B params, Q5_K_M via Ollama)
 
 Purpose-built by Cohere for agentic tasks, tool-calling, and structured JSON output.
 This model excels at:

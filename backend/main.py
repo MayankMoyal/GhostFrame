@@ -194,7 +194,7 @@ app.add_middleware(
 # Serve generated images
 app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 
-# Serve frontend files
+# Serve frontend files (dashboard at /app, panel at /app/panel.html)
 FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 if FRONTEND_DIR.exists():
     app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
@@ -372,28 +372,32 @@ async def generate_voice(
 
     anchor_type = agent_result.get("anchor_type", "background")
 
-    # Step 4: Optional background removal for props
-    filename_nobg = None
-    if remove_bg.lower() == "true" and anchor_type != "background":
-        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
-        filename_nobg = nobg_path.name
+    # ── Async background removal + push ──────────────────────────────────
+    # Return response IMMEDIATELY. rembg + push runs in background.
+    async def _bg_remove_and_push():
+        try:
+            if remove_bg.lower() == "true" and anchor_type != "background":
+                nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+                push_filename = nobg_path.name
+            else:
+                push_filename = output_path.name
 
-    # Broadcast to OBS overlay
-    broadcast_filename = filename_nobg or output_path.name
-    await broadcast_to_overlays({
-        "type": "new_prop",
-        "filename": broadcast_filename,
-        "anchor_type": anchor_type,
-    })
+            await broadcast_to_overlays({
+                "type": "new_prop",
+                "filename": push_filename,
+                "anchor_type": anchor_type,
+            })
+            await push_prop_to_local_engine(push_filename, anchor_type)
+        except Exception as exc:
+            print(f"[Background] rembg/push failed: {exc}")
 
-    # Event-driven: push prop directly to Local Engine
-    asyncio.create_task(push_prop_to_local_engine(broadcast_filename, anchor_type))
+    asyncio.create_task(_bg_remove_and_push())
 
     return {
         "status": "success",
         "transcript": transcript,
         "filename": output_path.name,
-        "filename_nobg": filename_nobg,
+        "filename_nobg": None,  # Will be ready asynchronously
         "metrics": metrics,
         "agent": {
             "original_prompt": transcript,
@@ -417,25 +421,28 @@ async def upload_prop(
     filename = f"custom_{int(time())}_{uuid4().hex[:8]}.png"
     save_path = OUTPUT_DIR / filename
 
-    # Remove background from the uploaded prop
     with open(save_path, "wb") as f:
         f.write(content)
 
-    nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+    # ── Async background removal + push ──────────────────────────────────
+    # Return response IMMEDIATELY. rembg + push runs in background.
+    async def _bg_remove_and_push():
+        try:
+            nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+            await broadcast_to_overlays({
+                "type": "new_prop",
+                "filename": nobg_path.name,
+                "anchor_type": anchor_type,
+            })
+            await push_prop_to_local_engine(nobg_path.name, anchor_type)
+        except Exception as exc:
+            print(f"[Background] upload-prop rembg/push failed: {exc}")
 
-    # Broadcast to OBS overlay
-    await broadcast_to_overlays({
-        "type": "new_prop",
-        "filename": nobg_path.name,
-        "anchor_type": anchor_type,
-    })
-
-    # Event-driven: push directly to Local Engine
-    asyncio.create_task(push_prop_to_local_engine(nobg_path.name, anchor_type))
+    asyncio.create_task(_bg_remove_and_push())
 
     return {
         "status": "success",
-        "filename": nobg_path.name,
+        "filename": filename,
         "anchor_type": anchor_type,
     }
 

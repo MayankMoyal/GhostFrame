@@ -52,7 +52,7 @@ GGUF_TRANSFORMER_PATH = os.environ.get(
     str(BACKEND_DIR / "models" / "gguf" / "z_image_turbo-Q5_K_M.gguf")
 )
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "command-r:7b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "command-r7b")
 
 # Whisper STT
 WHISPER_MODEL_SIZE = os.environ.get("GHOST_WHISPER_MODEL", "base")

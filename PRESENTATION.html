@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghost Frame — Project Presentation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary: #6C4BFF;
+            --primary-light: #8B6FFF;
+            --accent: #4A86FF;
+            --bg-dark: #080C18;
+            --bg-card: rgba(255,255,255,0.04);
+            --text-primary: #F1F5F9;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --green: #4ADE80;
+            --red: #EF4444;
+            --yellow: #FBBF24;
+        }
+
+        html, body {
+            width: 100%; height: 100%;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        /* ── Slide Container ───────────────────────────── */
+        .slide-container {
+            width: 100vw; height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 80px;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .slide.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        /* ── Slide Backgrounds ─────────────────────────── */
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(ellipse at 30% 20%, rgba(108,75,255,0.08) 0%, transparent 50%),
+                        radial-gradient(ellipse at 70% 80%, rgba(74,134,255,0.06) 0%, transparent 50%);
+            z-index: 0;
+            animation: bg-drift 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes bg-drift {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(-5%, 3%); }
+        }
+
+        .slide > * { position: relative; z-index: 1; }
+
+        /* ── Typography ────────────────────────────────── */
+        .slide-number {
+            position: absolute;
+            bottom: 30px; right: 40px;
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+
+        .slide-tag {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary-light);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            font-size: 64px;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #F1F5F9, #94A3B8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h1 .highlight {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h2 {
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 32px;
+        }
+
+        h3 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--text-primary);
+        }
+
+        .subtitle {
+            font-size: 22px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-width: 700px;
+            text-align: center;
+        }
+
+        /* ── Cards Grid ────────────────────────────────── */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            width: 100%;
+            max-width: 1100px;
+            margin-top: 10px;
+        }
+
+        .cards-grid.two-col {
+            grid-template-columns: repeat(2, 1fr);
+            max-width: 900px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: rgba(108,75,255,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(108,75,255,0.1);
+        }
+
+        .card-icon {
+            font-size: 36px;
+            margin-bottom: 14px;
+        }
+
+        .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .card-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* ── Architecture Diagram ──────────────────────── */
+        .arch-diagram {
+            display: flex;
+            gap: 40px;
+            align-items: stretch;
+            width: 100%;
+            max-width: 1100px;
+            margin-top: 10px;
+        }
+
+        .arch-box {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 28px;
+        }
+
+        .arch-box.cloud { border-color: rgba(108,75,255,0.3); }
+        .arch-box.local { border-color: rgba(74,134,255,0.3); }
+
+        .arch-box-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .arch-box-badge {
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .cloud .arch-box-badge { background: rgba(108,75,255,0.15); color: var(--primary-light); }
+        .local .arch-box-badge { background: rgba(74,134,255,0.15); color: var(--accent); }
+
+        .arch-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 0;
+            font-size: 14px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .arch-item:last-child { border-bottom: none; }
+
+        .arch-item-icon {
+            width: 28px; height: 28px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 8px;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .cloud .arch-item-icon { background: rgba(108,75,255,0.1); }
+        .local .arch-item-icon { background: rgba(74,134,255,0.1); }
+
+        .arch-connector {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            min-width: 80px;
+        }
+
+        .arch-connector-line {
+            width: 60px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            border-radius: 2px;
+        }
+
+        /* ── Pipeline Flow ─────────────────────────────── */
+        .pipeline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            max-width: 1100px;
+            margin-top: 10px;
+        }
+
+        .pipeline-step {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 20px 16px;
+            text-align: center;
+        }
+
+        .pipeline-step-num {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--primary-light);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 8px;
+        }
+
+        .pipeline-step-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .pipeline-step-detail {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .pipeline-arrow {
+            font-size: 18px;
+            color: var(--primary-light);
+            flex-shrink: 0;
+        }
+
+        /* ── Metrics Table ─────────────────────────────── */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px;
+            margin-top: 10px;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 42px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 500;
+        }
+
+        .metric-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ── List ──────────────────────────────────────── */
+        .feature-list {
+            list-style: none;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .feature-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 16px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .feature-list li:last-child { border-bottom: none; }
+
+        .feature-list .li-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .feature-list .li-label {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* ── Navigation ────────────────────────────────── */
+        .nav-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            background: rgba(10, 14, 26, 0.9);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            backdrop-filter: blur(12px);
+            z-index: 100;
+        }
+
+        .nav-btn {
+            width: 40px; height: 40px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.25s;
+        }
+
+        .nav-btn:hover {
+            background: rgba(108,75,255,0.15);
+            border-color: rgba(108,75,255,0.4);
+            color: white;
+        }
+
+        .nav-progress {
+            font-size: 13px;
+            color: var(--text-muted);
+            min-width: 60px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* ── Anchor Grid ───────────────────────────────── */
+        .anchor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            max-width: 750px;
+            width: 100%;
+        }
+
+        .anchor-item {
+            background: var(--bg-card);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .anchor-emoji { font-size: 28px; }
+
+        .anchor-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .anchor-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* ── Wide content ──────────────────────────────── */
+        .wide-content {
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .slide-left {
+            align-items: flex-start;
+        }
+
+        /* ── Table ─────────────────────────────────────── */
+        .data-table {
+            width: 100%;
+            max-width: 900px;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .data-table td {
+            padding: 14px 16px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .data-table td:first-child { color: var(--text-primary); font-weight: 500; }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-green { background: rgba(74,222,128,0.12); color: var(--green); }
+
+        /* Brand footer */
+        .brand-footer {
+            position: absolute;
+            bottom: 30px;
+            left: 40px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+
+        .brand-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+        }
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 1: Title -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide active" id="slide-1">
+        <div class="slide-tag">Real-Time AI for Livestreamers</div>
+        <h1><span class="highlight">Ghost Frame</span></h1>
+        <p class="subtitle">
+            Speak a prompt. AI generates it. It appears on your stream — tracked to your body in real-time.
+        </p>
+        <div style="margin-top: 40px; display: flex; gap: 20px; align-items: center;">
+            <div style="padding: 10px 24px; border-radius: 10px; background: rgba(108,75,255,0.12); border: 1px solid rgba(108,75,255,0.3); font-size: 13px; color: var(--primary-light);">
+                🎤 Voice-to-Prop
+            </div>
+            <div style="padding: 10px 24px; border-radius: 10px; background: rgba(74,134,255,0.12); border: 1px solid rgba(74,134,255,0.3); font-size: 13px; color: var(--accent);">
+                🎯 30fps Tracking
+            </div>
+            <div style="padding: 10px 24px; border-radius: 10px; background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.3); font-size: 13px; color: var(--green);">
+                📺 OBS Integration
+            </div>
+        </div>
+        <div class="slide-number">01 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 2: Problem -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-2">
+        <div class="slide-tag">The Problem</div>
+        <h2>Streamers lack dynamic,<br>interactive visual effects</h2>
+        <div class="cards-grid" style="margin-top: 10px;">
+            <div class="card">
+                <div class="card-icon">🖼️</div>
+                <div class="card-title">Static Overlays</div>
+                <div class="card-desc">Current tools offer pre-made, unchanging images. No AI generation, no customization during stream.</div>
+            </div>
+            <div class="card">
+                <div class="card-icon">💰</div>
+                <div class="card-title">Expensive Hardware</div>
+                <div class="card-desc">Motion capture suits and green screens cost thousands. Most streamers can't afford professional setups.</div>
+            </div>
+            <div class="card">
+                <div class="card-icon">⏱️</div>
+                <div class="card-title">No Real-Time</div>
+                <div class="card-desc">Manual editing takes minutes. Viewers want instant, interactive content that responds to their requests live.</div>
+            </div>
+        </div>
+        <div class="slide-number">02 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 3: Solution -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-3">
+        <div class="slide-tag">Our Solution</div>
+        <h2>AI-Powered Props,<br>Tracked in Real-Time</h2>
+        <ul class="feature-list" style="margin-top: 10px;">
+            <li>
+                <span class="li-icon">🎤</span>
+                <div><span class="li-label">Voice-to-Prop —</span> Speak "give me a flaming sword" → it appears in your hand in ~6 seconds</div>
+            </li>
+            <li>
+                <span class="li-icon">🎯</span>
+                <div><span class="li-label">Body-Tracked —</span> Props follow your hand, head, or body at 30fps using just a webcam</div>
+            </li>
+            <li>
+                <span class="li-icon">🖼️</span>
+                <div><span class="li-label">AI Backgrounds —</span> Say "enchanted forest" and your background changes instantly (no green screen)</div>
+            </li>
+            <li>
+                <span class="li-icon">📺</span>
+                <div><span class="li-label">OBS Native —</span> Plugs directly into OBS Studio, the #1 streaming software used by 80%+ of streamers</div>
+            </li>
+        </ul>
+        <div class="slide-number">03 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 4: Architecture -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-4">
+        <div class="slide-tag">System Architecture</div>
+        <h3>Two-Machine Split Design</h3>
+        <div class="arch-diagram">
+            <div class="arch-box cloud">
+                <div class="arch-box-header">
+                    <span style="font-size: 22px;">🖥️</span>
+                    <span class="arch-box-badge">Cloud GPU — 16GB VRAM</span>
+                </div>
+                <div class="arch-item"><div class="arch-item-icon">🎨</div> Z-Image-Turbo (Diffusion GGUF Q5)</div>
+                <div class="arch-item"><div class="arch-item-icon">🤖</div> Command-R 7B Agent (Ollama)</div>
+                <div class="arch-item"><div class="arch-item-icon">🎤</div> Whisper STT (Speech-to-Text)</div>
+                <div class="arch-item"><div class="arch-item-icon">✂️</div> rembg (Background Removal)</div>
+                <div class="arch-item"><div class="arch-item-icon">⚡</div> FastAPI Backend (:8000)</div>
+            </div>
+            <div class="arch-connector">
+                <span>SSH</span>
+                <div class="arch-connector-line"></div>
+                <span>TUNNEL</span>
+            </div>
+            <div class="arch-box local">
+                <div class="arch-box-header">
+                    <span style="font-size: 22px;">💻</span>
+                    <span class="arch-box-badge">Local Laptop</span>
+                </div>
+                <div class="arch-item"><div class="arch-item-icon">📷</div> Webcam Capture (30fps)</div>
+                <div class="arch-item"><div class="arch-item-icon">✋</div> MediaPipe Hands (21 landmarks)</div>
+                <div class="arch-item"><div class="arch-item-icon">🏃</div> MediaPipe Pose (33 landmarks)</div>
+                <div class="arch-item"><div class="arch-item-icon">🎬</div> RVM (Real-time Matting)</div>
+                <div class="arch-item"><div class="arch-item-icon">🖼️</div> Prop Compositing Engine</div>
+            </div>
+        </div>
+        <div class="slide-number">04 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 5: Pipeline -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-5">
+        <div class="slide-tag">AI Pipeline</div>
+        <h3>From Prompt to Prop in ~6 Seconds</h3>
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="pipeline-step-num">Step 1</div>
+                <div class="pipeline-step-title">🎤 Voice Input</div>
+                <div class="pipeline-step-detail">Whisper STT<br>~1s</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="pipeline-step-num">Step 2</div>
+                <div class="pipeline-step-title">🤖 AI Agent</div>
+                <div class="pipeline-step-detail">Command-R 7B<br>~1-2s</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="pipeline-step-num">Step 3</div>
+                <div class="pipeline-step-title">🎨 Generate</div>
+                <div class="pipeline-step-detail">Z-Image-Turbo<br>~4s</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="pipeline-step-num">Step 4</div>
+                <div class="pipeline-step-title">✂️ Remove BG</div>
+                <div class="pipeline-step-detail">rembg (async)<br>~6s background</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="pipeline-step-num">Step 5</div>
+                <div class="pipeline-step-title">🎯 Track & Show</div>
+                <div class="pipeline-step-detail">MediaPipe<br>30fps</div>
+            </div>
+        </div>
+        <div style="margin-top: 24px; padding: 14px 28px; border-radius: 10px; background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); font-size: 14px; color: var(--green);">
+            ⚡ Total perceived latency: ~6 seconds (rembg runs async in background)
+        </div>
+        <div class="slide-number">05 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 6: Anchor System -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-6">
+        <div class="slide-tag">Body Tracking</div>
+        <h3>9 Anchor Types — AI-Classified</h3>
+        <div class="anchor-grid" style="margin-top: 10px;">
+            <div class="anchor-item"><span class="anchor-emoji">⚔️</span><div><div class="anchor-name">Hand Held</div><div class="anchor-desc">Sword, Wand, Staff</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">👑</span><div><div class="anchor-name">Head Wear</div><div class="anchor-desc">Crown, Helmet, Hat</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">🦸</span><div><div class="anchor-name">Body Wear</div><div class="anchor-desc">Cape, Armor, Vest</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">🛡️</span><div><div class="anchor-name">Shield</div><div class="anchor-desc">Shield, Buckler</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">👓</span><div><div class="anchor-name">Face Wear</div><div class="anchor-desc">Glasses, Mask</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">📿</span><div><div class="anchor-name">Neck Wear</div><div class="anchor-desc">Necklace, Amulet</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">⌚</span><div><div class="anchor-name">Wrist Wear</div><div class="anchor-desc">Bracelet, Gauntlet</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">💎</span><div><div class="anchor-name">Ear Wear</div><div class="anchor-desc">Earring, Ear cuff</div></div></div>
+            <div class="anchor-item"><span class="anchor-emoji">🌲</span><div><div class="anchor-name">Background</div><div class="anchor-desc">Forest, Dungeon, Space</div></div></div>
+        </div>
+        <div class="slide-number">06 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 7: Tech Stack -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-7">
+        <div class="slide-tag">Technology Stack</div>
+        <h3>Built on State-of-the-Art AI</h3>
+        <table class="data-table">
+            <thead>
+                <tr><th>Component</th><th>Technology</th><th>Why</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Image Generation</td><td>Z-Image-Turbo (GGUF Q5_K_M)</td><td>4-step diffusion = 4s generation</td></tr>
+                <tr><td>AI Agent</td><td>Command-R 7B (Ollama)</td><td>Agentic JSON, local, no API cost</td></tr>
+                <tr><td>Speech-to-Text</td><td>Faster-Whisper (CTranslate2)</td><td>10x faster than OpenAI Whisper</td></tr>
+                <tr><td>Hand Tracking</td><td>MediaPipe Hands</td><td>21 landmarks, CPU, &lt;10ms</td></tr>
+                <tr><td>Pose Tracking</td><td>MediaPipe Pose</td><td>33 landmarks, full body</td></tr>
+                <tr><td>Video Matting</td><td>RVM (MobileNetV3)</td><td>Temporal consistency, no flicker</td></tr>
+                <tr><td>Backend</td><td>FastAPI + Uvicorn</td><td>Async, WebSocket, auto-docs</td></tr>
+            </tbody>
+        </table>
+        <div class="slide-number">07 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 8: Results -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-8">
+        <div class="slide-tag">Results & Validation</div>
+        <h3>Measured Performance</h3>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">4.2s</div>
+                <div class="metric-label">Image Generation</div>
+                <div class="metric-sub">Z-Image-Turbo</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">30</div>
+                <div class="metric-label">Tracking FPS</div>
+                <div class="metric-sub">MediaPipe</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">~6s</div>
+                <div class="metric-label">Total Latency</div>
+                <div class="metric-sub">Prompt to Prop</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">14GB</div>
+                <div class="metric-label">Peak VRAM</div>
+                <div class="metric-sub">16GB available</div>
+            </div>
+        </div>
+        <div style="margin-top: 30px; max-width: 800px;">
+            <table class="data-table">
+                <thead><tr><th>Validation Test</th><th>Result</th></tr></thead>
+                <tbody>
+                    <tr><td>End-to-end voice → prop pipeline</td><td><span class="badge badge-green">✓ Passed</span></td></tr>
+                    <tr><td>All 9 anchor types classified correctly</td><td><span class="badge badge-green">✓ Passed</span></td></tr>
+                    <tr><td>Cross-machine SSH tunnel communication</td><td><span class="badge badge-green">✓ Passed</span></td></tr>
+                    <tr><td>OBS transparent overlay integration</td><td><span class="badge badge-green">✓ Passed</span></td></tr>
+                    <tr><td>Async rembg (non-blocking response)</td><td><span class="badge badge-green">✓ Passed</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="slide-number">08 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 9: Demo -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-9">
+        <div class="slide-tag">Live Demonstration</div>
+        <h2>Let's See It in Action</h2>
+        <div class="cards-grid two-col" style="margin-top: 20px;">
+            <div class="card" style="text-align: center;">
+                <div class="card-icon">⌨️</div>
+                <div class="card-title">Text Demo</div>
+                <div class="card-desc" style="font-size: 15px;">"A glowing blue lightsaber"<br><br>→ Agent classifies as hand_held<br>→ Image generated in ~4s<br>→ Tracked to hand at 30fps</div>
+            </div>
+            <div class="card" style="text-align: center;">
+                <div class="card-icon">🎤</div>
+                <div class="card-title">Voice Demo</div>
+                <div class="card-desc" style="font-size: 15px;">"Give me a golden crown"<br><br>→ Whisper transcribes speech<br>→ Agent classifies as head_wear<br>→ Placed above head</div>
+            </div>
+        </div>
+        <div style="margin-top: 30px; padding: 16px 32px; border-radius: 12px; background: rgba(108,75,255,0.08); border: 1px solid rgba(108,75,255,0.2); font-size: 15px; color: var(--text-secondary);">
+            🌐 Control Panel: <strong style="color: var(--primary-light);">http://localhost:8000/app/panel.html</strong>
+        </div>
+        <div class="slide-number">09 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- SLIDE 10: Future & Thank You -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="slide" id="slide-10">
+        <div class="slide-tag">Future Scope & Conclusion</div>
+        <h2>What's Next</h2>
+        <div class="cards-grid" style="margin-top: 10px;">
+            <div class="card">
+                <div class="card-icon">🎭</div>
+                <div class="card-title">Multi-Prop</div>
+                <div class="card-desc">Hold a sword AND wear a crown simultaneously. Slot-based prop management.</div>
+            </div>
+            <div class="card">
+                <div class="card-icon">💬</div>
+                <div class="card-title">Chat Integration</div>
+                <div class="card-desc">Twitch/YouTube chat triggers. Viewers donate and choose the prop.</div>
+            </div>
+            <div class="card">
+                <div class="card-icon">⚡</div>
+                <div class="card-title">On-Device</div>
+                <div class="card-desc">Run everything on a single RTX 4090 — eliminate the cloud dependency.</div>
+            </div>
+        </div>
+        <div style="margin-top: 50px; text-align: center;">
+            <h2 style="font-size: 42px;">Thank You</h2>
+            <p class="subtitle" style="margin-top: 12px;">Questions?</p>
+        </div>
+        <div class="slide-number">10 / 10</div>
+        <div class="brand-footer"><div class="brand-dot"></div>GHOSTFRAME</div>
+    </div>
+
+</div>
+
+<!-- Navigation -->
+<div class="nav-bar">
+    <button class="nav-btn" id="prev-btn" onclick="changeSlide(-1)">←</button>
+    <span class="nav-progress" id="nav-progress">1 / 10</span>
+    <button class="nav-btn" id="next-btn" onclick="changeSlide(1)">→</button>
+</div>
+
+<script>
+    const slides = document.querySelectorAll('.slide');
+    let currentSlide = 0;
+    const totalSlides = slides.length;
+
+    function showSlide(index) {
+        slides.forEach(s => { s.classList.remove('active'); s.style.display = 'none'; });
+        slides[index].style.display = 'flex';
+        // Force reflow for animation
+        slides[index].offsetHeight;
+        slides[index].classList.add('active');
+        document.getElementById('nav-progress').textContent = `${index + 1} / ${totalSlides}`;
+    }
+
+    function changeSlide(dir) {
+        currentSlide = Math.max(0, Math.min(totalSlides - 1, currentSlide + dir));
+        showSlide(currentSlide);
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); changeSlide(1); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); changeSlide(-1); }
+        if (e.key === 'Home') { e.preventDefault(); currentSlide = 0; showSlide(0); }
+        if (e.key === 'End') { e.preventDefault(); currentSlide = totalSlides - 1; showSlide(totalSlides - 1); }
+    });
+
+    showSlide(0);
+</script>
+
+</body>
+</html>

@@ -3,7 +3,9 @@
 //          Local Engine health monitoring
 
 // Default to localhost if opening the file directly, else use the host
-const BACKEND_BASE_URL = window.location.origin;
+const BACKEND_BASE_URL = window.location.protocol === 'file:'
+    ? 'http://localhost:8000'
+    : window.location.origin;
 const LOCAL_ENGINE_URL = 'http://localhost:8001';
 
 // ── Push to Local Engine (Browser-side relay) ────────────────────────────
@@ -200,7 +202,7 @@ async function generateImage() {
             throw new Error("The backend did not return an output filename.");
         }
 
-        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename_nobg || data.filename}`;
+        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
         setPreviewImage(imageUrl, prompt);
         addToRecentGenerations(imageUrl, prompt);
 
@@ -216,8 +218,7 @@ async function generateImage() {
 
         // Forward to Local Engine directly (no reverse tunnel needed)
         const anchorType = data.agent?.anchor_type || 'background';
-        const pushFilename = data.filename_nobg || data.filename;
-        pushToLocalEngine(pushFilename, anchorType);
+        pushToLocalEngine(data.filename, anchorType);
     } catch (error) {
         setText("analysis", error.message);
         setPipelineStep("step5", "Error");
@@ -269,7 +270,7 @@ async function sendVoicePrompt(audioBlob) {
         }
 
         const promptText = data.transcript || "Voice Prompt";
-        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename_nobg || data.filename}`;
+        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
         setPreviewImage(imageUrl, promptText);
         addToRecentGenerations(imageUrl, promptText);
 
@@ -286,8 +287,7 @@ async function sendVoicePrompt(audioBlob) {
 
         // Forward to Local Engine directly (no reverse tunnel needed)
         const anchorType = data.agent?.anchor_type || 'background';
-        const pushFilename = data.filename_nobg || data.filename;
-        pushToLocalEngine(pushFilename, anchorType);
+        pushToLocalEngine(data.filename, anchorType);
     } catch (error) {
         setText("analysis", error.message);
         setPipelineStep("step5", "Error");

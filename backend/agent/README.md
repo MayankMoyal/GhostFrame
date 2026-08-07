@@ -1,9 +1,9 @@
 # Ghost Frame — Agent Module
 
 ## Active Model
-- **`client.py`** → **Command-R 7B** (`command-r:7b` via Ollama)
+- **`client.py`** → **Command-R 7B** (`command-r7b` via Ollama)
   - Purpose-built for agentic JSON tasks
-  - ~4.5GB VRAM (Q4)
+  - ~4.5GB VRAM (Q5)
   - Classifies: style, type (prop/background), anchor_type, prop_category
   - Rewrites prompts for optimal image generation
 

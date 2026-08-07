@@ -66,12 +66,12 @@ else
 fi
 
 # Pull Command-R 7B (the active agent model)
-if ollama list | grep -q "command-r:7b"; then
-    echo "    ✓ command-r:7b already pulled"
+if ollama list | grep -q "command-r7b"; then
+    echo "    ✓ command-r7b already pulled"
 else
-    echo "    Pulling command-r:7b (~4.5GB)..."
-    ollama pull command-r:7b
-    echo "    ✓ command-r:7b ready"
+    echo "    Pulling command-r7b (~4.5GB)..."
+    ollama pull command-r7b
+    echo "    ✓ command-r7b ready"
 fi
 
 # ── 7. Verify Setup ───────────────────────────────────────
@@ -81,6 +81,12 @@ python3 -c "import fastapi; print(f'    FastAPI {fastapi.__version__}')"
 python3 -c "import diffusers; print(f'    Diffusers {diffusers.__version__}')"
 ollama list | head -5
 
+# ── Warmup: Pre-load Command-R 7B into VRAM ──────────────────────────
+echo ""
+echo "=== Warming up Ollama (pre-loading command-r7b into VRAM)... ==="
+curl -s http://localhost:11434/api/generate -d '{"model": "command-r7b", "prompt": "test", "stream": false}' > /dev/null 2>&1
+echo "    ✓ command-r7b loaded into VRAM"
+
 echo ""
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║              ✓ Setup Complete!                       ║"
@@ -88,9 +94,9 @@ echo "╠═══════════════════════�
 echo "║  Start the server:                                   ║"
 echo "║    python3 main.py                                   ║"
 echo "║                                                      ║"
-echo "║  Open the dashboard:                                 ║"
-echo "║    http://localhost:8000/app/                         ║"
+echo "║  Dashboard:  http://localhost:8000/app/               ║"
+echo "║  Panel:      http://localhost:8000/app/panel.html     ║"
 echo "║                                                      ║"
-echo "║  Agent model: Command-R 7B (command-r:7b)            ║"
+echo "║  Agent model: Command-R 7B (command-r7b)             ║"
 echo "║  Image model: Z-Image-Turbo Q5_K_M                   ║"
 echo "╚══════════════════════════════════════════════════════╝"
