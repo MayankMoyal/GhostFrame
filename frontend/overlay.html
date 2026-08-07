@@ -4,38 +4,43 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GhostFrame OBS Overlay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body, html {
+        /* ── Reset & OBS Transparency ─────────────────────────────────── */
+        *, *::before, *::after {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+
+        body, html {
             width: 100vw;
             height: 100vh;
             overflow: hidden;
             background-color: transparent !important; /* CRITICAL for OBS */
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #E2E8F0;
         }
 
-        /* Container for the active prop */
+        /* ── Prop Rendering Layer (unchanged from original) ───────────── */
         #prop-container {
             position: absolute;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            pointer-events: none; /* Let clicks pass through */
+            pointer-events: none;
             z-index: 10;
         }
 
-        /* The actual image element */
         #prop-img {
             position: absolute;
             display: none;
             transform-origin: center center;
-            will-change: transform; /* Hardware acceleration for smooth 30fps */
-            /* Fast transition for smooth movement between frames */
+            will-change: transform;
             transition: transform 0.05s linear;
         }
-        
-        /* Full screen background mode */
+
         #bg-img {
             position: absolute;
             top: 0;
@@ -44,20 +49,793 @@
             height: 100vh;
             object-fit: cover;
             display: none;
-            z-index: -1; /* Goes behind everything */
+            z-index: -1;
         }
+
+        /* ── Game Bar Trigger Button ──────────────────────────────────── */
+        #gamebar-trigger {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            border: 1px solid rgba(108, 75, 255, 0.4);
+            background: rgba(12, 18, 32, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            cursor: pointer;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4),
+                        0 0 0 1px rgba(108, 75, 255, 0.15);
+            pointer-events: auto;
+        }
+
+        #gamebar-trigger:hover {
+            transform: scale(1.08);
+            border-color: rgba(108, 75, 255, 0.7);
+            box-shadow: 0 4px 32px rgba(108, 75, 255, 0.3),
+                        0 0 0 1px rgba(108, 75, 255, 0.3);
+        }
+
+        #gamebar-trigger:active {
+            transform: scale(0.95);
+        }
+
+        #gamebar-trigger .trigger-icon {
+            font-size: 24px;
+            line-height: 1;
+            filter: drop-shadow(0 0 8px rgba(108, 75, 255, 0.5));
+        }
+
+        #gamebar-trigger .shortcut-hint {
+            position: absolute;
+            bottom: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.35);
+            white-space: nowrap;
+            letter-spacing: 0.5px;
+            pointer-events: none;
+        }
+
+        #gamebar-trigger.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* ── Panel Backdrop (darkens background when open) ────────────── */
+        #panel-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.15);
+            z-index: 1001;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+
+        #panel-backdrop.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* ── Game Bar Panel ───────────────────────────────────────────── */
+        #gamebar-panel {
+            position: fixed;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%) translateX(100%);
+            width: 280px;
+            max-height: 92vh;
+            z-index: 1002;
+            border-radius: 20px 0 0 20px;
+            border: 1px solid rgba(108, 75, 255, 0.2);
+            border-right: none;
+            background: rgba(10, 14, 26, 0.92);
+            backdrop-filter: blur(40px) saturate(1.5);
+            -webkit-backdrop-filter: blur(40px) saturate(1.5);
+            box-shadow: -8px 0 60px rgba(0, 0, 0, 0.6),
+                        0 0 0 1px rgba(108, 75, 255, 0.08),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            pointer-events: auto;
+        }
+
+        #gamebar-panel.open {
+            transform: translateY(-50%) translateX(0);
+        }
+
+        /* ── Panel Header ─────────────────────────────────────────────── */
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+
+        .panel-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .panel-logo {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #6C4BFF, #4A86FF);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+            color: white;
+            box-shadow: 0 0 20px rgba(108, 75, 255, 0.3);
+        }
+
+        .panel-title {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            color: #F1F5F9;
+        }
+
+        .panel-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            color: #94A3B8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+
+        .panel-close:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #FCA5A5;
+        }
+
+        /* ── Status Bar ───────────────────────────────────────────────── */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            flex-shrink: 0;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #64748B;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #475569;
+            transition: all 0.3s;
+        }
+
+        .status-dot.online {
+            background: #4ADE80;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+        }
+
+        .status-dot.offline {
+            background: #EF4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+        }
+
+        .status-dot.connecting {
+            background: #FBBF24;
+            box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ── Tab Switcher ─────────────────────────────────────────────── */
+        .tab-bar {
+            display: flex;
+            padding: 10px 16px 0;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px 0;
+            border: none;
+            border-radius: 10px 10px 0 0;
+            background: transparent;
+            color: #64748B;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s;
+            position: relative;
+        }
+
+        .tab-btn:hover {
+            color: #94A3B8;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            color: #E2E8F0;
+            background: rgba(108, 75, 255, 0.1);
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 20%;
+            right: 20%;
+            height: 2px;
+            background: linear-gradient(90deg, #6C4BFF, #4A86FF);
+            border-radius: 2px;
+        }
+
+        .tab-emoji {
+            margin-right: 6px;
+            font-size: 15px;
+        }
+
+        /* ── Tab Content ──────────────────────────────────────────────── */
+        .tab-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 16px;
+        }
+
+        .tab-content::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .tab-content::-webkit-scrollbar-thumb {
+            background: rgba(108, 75, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        /* ── Voice Input ──────────────────────────────────────────────── */
+        .voice-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 0;
+        }
+
+        .mic-button {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            border: 2px solid rgba(108, 75, 255, 0.3);
+            background: rgba(108, 75, 255, 0.08);
+            color: white;
+            font-size: 36px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mic-button::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .mic-button:hover {
+            border-color: rgba(108, 75, 255, 0.6);
+            background: rgba(108, 75, 255, 0.15);
+            transform: scale(1.05);
+        }
+
+        .mic-button.recording {
+            border-color: #EF4444;
+            background: rgba(239, 68, 68, 0.15);
+            animation: mic-pulse 1.2s ease-in-out infinite;
+        }
+
+        .mic-button.recording::before {
+            border-color: rgba(239, 68, 68, 0.3);
+            animation: mic-ring 1.2s ease-in-out infinite;
+        }
+
+        @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+            50% { box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+        }
+
+        @keyframes mic-ring {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.4; }
+        }
+
+        .mic-label {
+            font-size: 12px;
+            color: #94A3B8;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .mic-label kbd {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            font-family: 'Inter', sans-serif;
+            font-size: 10px;
+            color: #CBD5E1;
+        }
+
+        /* Waveform Visualizer */
+        .waveform {
+            width: 100%;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .waveform.active {
+            opacity: 1;
+        }
+
+        .waveform-bar {
+            width: 3px;
+            height: 8px;
+            border-radius: 2px;
+            background: linear-gradient(180deg, #6C4BFF, #4A86FF);
+            transition: height 0.1s ease;
+        }
+
+        /* ── Text Input ───────────────────────────────────────────────── */
+        .text-section {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .input-label {
+            font-size: 11px;
+            font-weight: 500;
+            color: #94A3B8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .text-input {
+            width: 100%;
+            min-height: 80px;
+            max-height: 140px;
+            resize: vertical;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            color: #E2E8F0;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+            outline: none;
+            transition: all 0.25s;
+        }
+
+        .text-input::placeholder {
+            color: #475569;
+        }
+
+        .text-input:focus {
+            border-color: rgba(108, 75, 255, 0.5);
+            background: rgba(108, 75, 255, 0.04);
+            box-shadow: 0 0 0 3px rgba(108, 75, 255, 0.08);
+        }
+
+        .style-select {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            color: #E2E8F0;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            transition: all 0.25s;
+        }
+
+        .style-select:focus {
+            border-color: rgba(108, 75, 255, 0.5);
+        }
+
+        .style-select option {
+            background: #0A0E1A;
+            color: #E2E8F0;
+        }
+
+        /* ── Generate Button ──────────────────────────────────────────── */
+        .generate-btn {
+            width: 100%;
+            padding: 13px 0;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #6C4BFF, #4A86FF);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .generate-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+            transition: left 0.5s;
+        }
+
+        .generate-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px rgba(108, 75, 255, 0.35);
+        }
+
+        .generate-btn:hover:not(:disabled)::before {
+            left: 100%;
+        }
+
+        .generate-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .generate-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .generate-btn.loading {
+            pointer-events: none;
+        }
+
+        /* ── Clear Props Button ───────────────────────────────────────── */
+        .clear-btn {
+            width: 100%;
+            padding: 10px 0;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 10px;
+            background: rgba(239, 68, 68, 0.06);
+            color: #FCA5A5;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s;
+        }
+
+        .clear-btn:hover {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.35);
+        }
+
+        /* ── Toast Notification ───────────────────────────────────────── */
+        #toast {
+            position: fixed;
+            bottom: 100px;
+            right: 28px;
+            padding: 12px 22px;
+            border-radius: 12px;
+            border: 1px solid rgba(74, 222, 128, 0.2);
+            background: rgba(10, 14, 26, 0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: #4ADE80;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            z-index: 1003;
+            opacity: 0;
+            transform: translateY(12px);
+            pointer-events: none;
+            transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        #toast.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        #toast.error {
+            color: #FCA5A5;
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        /* ── Panel Footer ─────────────────────────────────────────────── */
+        .panel-footer {
+            padding: 10px 16px 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+            flex-shrink: 0;
+        }
+
+        .footer-hint {
+            text-align: center;
+            font-size: 10px;
+            color: #475569;
+            letter-spacing: 0.3px;
+        }
+
+        .footer-hint kbd {
+            padding: 1px 6px;
+            border-radius: 3px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            font-family: 'Inter', sans-serif;
+            font-size: 10px;
+        }
+
+        /* ── Divider ──────────────────────────────────────────────────── */
+        .divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.05);
+            margin: 6px 0;
+        }
+
+        /* ── Last Generated Preview ───────────────────────────────────── */
+        .last-gen {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .last-gen-img {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .last-gen-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .last-gen-label {
+            font-size: 10px;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .last-gen-prompt {
+            font-size: 12px;
+            color: #CBD5E1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 2px;
+        }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <!-- Full screen background element -->
+    <!-- ═══ LAYER 1: Background Image (z-index: -1) ═══ -->
     <img id="bg-img" src="" alt="Background">
 
-    <!-- Foreground prop container -->
+    <!-- ═══ LAYER 2: Foreground Prop Container (z-index: 10) ═══ -->
     <div id="prop-container">
         <img id="prop-img" src="" alt="Prop">
     </div>
 
+    <!-- ═══ LAYER 3: Game Bar Trigger Button ═══ -->
+    <button id="gamebar-trigger" title="Open GhostFrame Panel (Ctrl+G)">
+        <span class="trigger-icon">⚡</span>
+        <span class="shortcut-hint">Ctrl + G</span>
+    </button>
+
+    <!-- ═══ LAYER 4: Panel Backdrop ═══ -->
+    <div id="panel-backdrop"></div>
+
+    <!-- ═══ LAYER 5: Game Bar Sliding Panel ═══ -->
+    <div id="gamebar-panel">
+        <!-- Header -->
+        <div class="panel-header">
+            <div class="panel-brand">
+                <div class="panel-logo">GF</div>
+                <span class="panel-title">GHOSTFRAME</span>
+            </div>
+            <button class="panel-close" id="panel-close-btn" title="Close (Esc)">✕</button>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-dot connecting" id="cloud-status-dot"></div>
+                <span id="cloud-status-text">Cloud</span>
+            </div>
+            <div class="status-item">
+                <div class="status-dot connecting" id="engine-status-dot"></div>
+                <span id="engine-status-text">Engine</span>
+            </div>
+        </div>
+
+        <!-- Tab Switcher -->
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="voice" id="tab-voice-btn">
+                <span class="tab-emoji">🎤</span>Voice
+            </button>
+            <button class="tab-btn" data-tab="text" id="tab-text-btn">
+                <span class="tab-emoji">⌨️</span>Text
+            </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- Voice Tab -->
+            <div class="tab-pane active" id="tab-voice">
+                <div class="voice-section">
+                    <button class="mic-button" id="mic-btn" title="Hold to record">
+                        🎤
+                    </button>
+                    <div class="waveform" id="waveform">
+                        <!-- Bars generated by JS -->
+                    </div>
+                    <p class="mic-label" id="mic-label">
+                        Hold to speak or press <kbd>Space</kbd>
+                    </p>
+
+                    <div class="input-group" style="width: 100%;">
+                        <span class="input-label">Visual Style</span>
+                        <select class="style-select" id="voice-style">
+                            <option>Cinematic</option>
+                            <option>Photorealistic</option>
+                            <option>Digital Art</option>
+                            <option>Concept Art</option>
+                            <option>Fantasy</option>
+                            <option>Sci-Fi</option>
+                            <option>Anime / Manga</option>
+                            <option>Game Art</option>
+                            <option>3D Render</option>
+                            <option>Cyberpunk</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Text Tab -->
+            <div class="tab-pane" id="tab-text">
+                <div class="text-section">
+                    <div class="input-group">
+                        <span class="input-label">Prompt</span>
+                        <textarea class="text-input" id="text-prompt"
+                            placeholder="Describe the prop you want...&#10;e.g. A glowing blue lightsaber"></textarea>
+                    </div>
+
+                    <div class="input-group">
+                        <span class="input-label">Visual Style</span>
+                        <select class="style-select" id="text-style">
+                            <option>Cinematic</option>
+                            <option>Photorealistic</option>
+                            <option>Digital Art</option>
+                            <option>Concept Art</option>
+                            <option>Fantasy</option>
+                            <option>Sci-Fi</option>
+                            <option>Anime / Manga</option>
+                            <option>Game Art</option>
+                            <option>3D Render</option>
+                            <option>Cyberpunk</option>
+                        </select>
+                    </div>
+
+                    <button class="generate-btn" id="text-generate-btn">
+                        ⚡ Generate Prop
+                    </button>
+                </div>
+            </div>
+
+            <!-- Divider + Last Generated -->
+            <div class="divider" style="margin-top: 14px;"></div>
+
+            <div class="last-gen hidden" id="last-gen">
+                <img class="last-gen-img" id="last-gen-img" src="" alt="Last generated">
+                <div class="last-gen-info">
+                    <div class="last-gen-label">Last Generated</div>
+                    <div class="last-gen-prompt" id="last-gen-prompt"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 10px;">
+                <button class="clear-btn" id="clear-props-btn">🗑️ Clear All Props</button>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="panel-footer">
+            <div class="footer-hint">
+                <kbd>Ctrl+G</kbd> toggle · <kbd>Esc</kbd> close · <kbd>Space</kbd> push-to-talk
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ Toast Notification ═══ -->
+    <div id="toast"></div>
+
+    <!-- ═══ Script ═══ -->
     <script src="overlay.js"></script>
 </body>
 </html>
