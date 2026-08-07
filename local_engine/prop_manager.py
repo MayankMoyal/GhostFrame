@@ -100,18 +100,61 @@ class PropManager:
 
     @staticmethod
     def _orient_vertical_handle_down(rgba: np.ndarray) -> np.ndarray:
-        h, w = rgba.shape[:2]
-        if w > h * 1.3:
-            rgba = cv2.rotate(rgba, cv2.ROTATE_90_CLOCKWISE)
-            h, w = rgba.shape[:2]
-            print("[PropManager] Auto-rotated horizontal -> vertical.")
+        import math
         alpha = rgba[:, :, 3]
+        
+        # 1. Find principal axis using image moments and rotate to perfectly vertical
+        moments = cv2.moments(alpha)
+        if moments["m00"] > 0:
+            mu20 = moments["mu20"]
+            mu02 = moments["mu02"]
+            mu11 = moments["mu11"]
+            
+            # Calculate angle of principal axis relative to x-axis
+            theta = 0.5 * math.atan2(2 * mu11, mu20 - mu02)
+            angle_deg = math.degrees(theta)
+            
+            # We want the principal axis to be perfectly vertical (90 degrees)
+            rotation_needed = 90 - angle_deg
+            
+            # Only rotate if it's significantly diagonal (e.g. >15 degrees off vertical)
+            if abs(rotation_needed % 180) > 15 and abs(rotation_needed % 180) < 165:
+                h, w = rgba.shape[:2]
+                cx, cy = w // 2, h // 2
+                M = cv2.getRotationMatrix2D((cx, cy), rotation_needed, 1.0)
+                
+                # Calculate new bounding box to prevent clipping
+                cos = np.abs(M[0, 0])
+                sin = np.abs(M[0, 1])
+                new_w = int((h * sin) + (w * cos))
+                new_h = int((h * cos) + (w * sin))
+                M[0, 2] += (new_w / 2) - cx
+                M[1, 2] += (new_h / 2) - cy
+                
+                rgba = cv2.warpAffine(rgba, M, (new_w, new_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0,0,0,0))
+                print(f"[PropManager] Auto-rotated diagonal object by {rotation_needed:.1f} degrees.")
+                
+                # Re-crop to the new bounding box
+                alpha = rgba[:, :, 3]
+                coords = cv2.findNonZero(alpha)
+                if coords is not None:
+                    x, y, w_b, h_b = cv2.boundingRect(coords)
+                    rgba = rgba[y:y+h_b, x:x+w_b]
+        
+        # 2. Ensure handle is at the bottom (compare top vs bottom width)
+        h, w = rgba.shape[:2]
         quarter = max(1, h // 4)
+        alpha = rgba[:, :, 3]
         top_w = PropManager._avg_row_width(alpha[:quarter, :])
         bot_w = PropManager._avg_row_width(alpha[h - quarter:, :])
+        
         if top_w > bot_w * 1.3:
             rgba = cv2.flip(rgba, 0)
             print("[PropManager] Flipped so handle is at bottom.")
+        elif bot_w == 0 and top_w > 0:
+            rgba = cv2.flip(rgba, 0)
+            print("[PropManager] Flipped so handle is at bottom (fallback).")
+            
         return rgba
 
     @staticmethod
@@ -136,11 +179,39 @@ class PropManager:
     def _pivot_handle_bottom(rgba: np.ndarray) -> Tuple[float, float]:
         h, w = rgba.shape[:2]
         alpha = rgba[:, :, 3]
+        
+        # 1. Find the X pivot based on the bottom 20% mass
         handle_strip = alpha[int(h * 0.80):, :]
         col_mass = np.sum(handle_strip > 127, axis=0).astype(np.float64)
         total = np.sum(col_mass)
         pivot_x = float(np.sum(np.arange(w) * col_mass) / total) / w if total > 0 else 0.5
-        return (pivot_x, 0.85)
+        
+        # 2. Find the Y pivot dynamically!
+        # Find the widest part in the bottom half (usually the crossguard of a sword)
+        bottom_half = alpha[h // 2:, :]
+        widths = []
+        for i, row in enumerate(bottom_half):
+            cols = np.where(row > 127)[0]
+            if len(cols) > 0:
+                widths.append((i, cols[-1] - cols[0]))
+            else:
+                widths.append((i, 0))
+                
+        if widths:
+            max_w_row, max_w = max(widths, key=lambda x: x[1])
+            crossguard_y = (h // 2) + max_w_row
+            
+            # If the widest part is significantly wide (like a crossguard),
+            # place the pivot slightly below it (on the handle)
+            if max_w > w * 0.15:
+                pivot_y = min((crossguard_y + h * 0.05) / h, 0.95)
+            else:
+                # For thin items like wands, just grip near the very bottom
+                pivot_y = 0.92
+        else:
+            pivot_y = 0.85
+            
+        return (pivot_x, pivot_y)
 
     @staticmethod
     def _pivot_bottom_center(rgba: np.ndarray) -> Tuple[float, float]:

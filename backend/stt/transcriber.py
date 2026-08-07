@@ -31,7 +31,7 @@ def load_whisper_model(
     Parameters
     ----------
     model_size : str
-        Whisper model variant.  'small' is the default — good accuracy
+        Whisper model variant.  'base' is the default — good accuracy
         for short spoken prompts without heavy RAM cost.
     device : str
         Hardcoded to 'cpu' as requested to save GPU VRAM.

@@ -101,7 +101,7 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
     print("\n=== Z IMAGE TURBO BASELINE METRICS ===")
     print(f"Latency = {latency:.4f} seconds")
     print(f"Peak VRAM USE : {peak_vram_use:.4f} GB")
-    print("Image sucessfully saved")
+    print("Image successfully saved")
 
     return {
         "latency_seconds": round(latency, 4),

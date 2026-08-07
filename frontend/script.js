@@ -443,7 +443,7 @@ async function checkEngineHealth() {
         const data = await resp.json();
         if (data.status === "ok") {
             engineDot.className = "status-dot online";
-            engineStatusEl.textContent = `Local Engine: 🟢 ${data.fps} FPS`;
+            engineStatusEl.textContent = `Local Engine: 🟢 ${data.fps !== undefined ? data.fps + ' FPS' : 'Online'}`;
         } else {
             engineDot.className = "status-dot starting";
             engineStatusEl.textContent = "Local Engine: 🟡 Starting...";
