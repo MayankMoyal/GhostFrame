@@ -1,7 +1,9 @@
-// Ghost Frame — OBS Overlay Engine
+// Ghost Stream — OBS Overlay Engine
 // Connects to:
 //   1. Local Engine (ws://localhost:8001/ws/anchor) for 30fps tracking data
 //   2. Cloud Backend (ws://<host>/ws/anchor) for new prop/clear events
+// 
+// This file is CLEAN — no UI elements. The overlay is invisible to viewers.
 
 const LOCAL_WS_URL = 'ws://localhost:8001/ws/anchor';
 
@@ -51,12 +53,12 @@ const propImg = document.getElementById("prop-img");
 const bgImg = document.getElementById("bg-img");
 
 // Apply default prop to DOM immediately
-propImg.src = currentProp.url;
 propImg.onload = () => {
     imgWidth = propImg.naturalWidth;
     imgHeight = propImg.naturalHeight;
     propImg.style.display = "block";
 };
+propImg.src = currentProp.url;
 
 // Determine protocols for cloud backend connection
 const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
@@ -78,7 +80,13 @@ function connectLocalWs() {
     };
 
     localWs.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+        let data;
+        try {
+            data = JSON.parse(event.data);
+        } catch (err) {
+            console.warn("[Overlay] Failed to parse Local WS message:", event.data);
+            return;
+        }
 
         // Local engine only sends tracking payloads, not new_prop events
         if (!currentProp || data.error || !data.points || data.points.length === 0) return;
@@ -98,7 +106,10 @@ function connectLocalWs() {
 
 // ── Cloud Backend WebSocket (Prop Events) ────────────────────────────────
 function connectCloudWs() {
-    const cloudUrl = `${wsProtocol}//${window.location.host}/ws/anchor`;
+    const cloudUrl = window.location.protocol === 'file:'
+        ? 'ws://localhost:8000/ws/anchor'
+        : `${wsProtocol}//${window.location.host}/ws/anchor`;
+
     cloudWs = new WebSocket(cloudUrl);
 
     cloudWs.onopen = () => {
@@ -109,7 +120,13 @@ function connectCloudWs() {
     };
 
     cloudWs.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+        let data;
+        try {
+            data = JSON.parse(event.data);
+        } catch (err) {
+            console.warn("[Overlay] Failed to parse Cloud WS message:", event.data);
+            return;
+        }
 
         // Cloud backend only sends new_prop events
         if (data.type === "new_prop") {
@@ -136,8 +153,12 @@ function handleNewProp(data) {
         return;
     }
 
+    const baseUrl = window.location.protocol === 'file:'
+        ? 'http://localhost:8000'
+        : `${protocol}//${window.location.host}`;
+
     currentProp = {
-        url: `${protocol}//${window.location.host}/outputs/${data.filename}`,
+        url: `${baseUrl}/outputs/${data.filename}`,
         anchorType: data.anchor_type,
         gripX: typeof data.grip_x === "number" ? data.grip_x : null,
         gripY: typeof data.grip_y === "number" ? data.grip_y : null,
@@ -155,7 +176,6 @@ function handleNewProp(data) {
         bgImg.style.display = "none";
     } else {
         bgImg.style.display = "none";
-        propImg.src = currentProp.url;
         propImg.onload = () => {
             imgWidth = propImg.naturalWidth;
             imgHeight = propImg.naturalHeight;
@@ -165,6 +185,7 @@ function handleNewProp(data) {
             const startY = (window.innerHeight - imgHeight) / 2;
             propImg.style.transform = `translate(${startX}px, ${startY}px)`;
         };
+        propImg.src = currentProp.url;
     }
 }
 
