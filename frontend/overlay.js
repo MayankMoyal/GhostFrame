@@ -63,7 +63,7 @@ const ZONE_GRIP = {
     "head_wear":       0.95,
     "neck_wear":       0.05,
     "ear_wear":        0.05,
-    "face_wear":       0.50,
+    "face_wear":       0.35,
     "left_shoulder":   0.5,
     "right_shoulder":  0.5,
     "both_shoulders":  0.5,

@@ -60,8 +60,8 @@ PROFILES = {
         prop_scale_ref="height", scale_multiplier=1.5,
         rotation_mode="head_tilt", auto_orient="as_is", z_index=1),
     PropCategory.FACE_WEAR: AttachmentProfile(
-        category=PropCategory.FACE_WEAR, pivot_strategy="center",
-        pivot_default=(0.5, 0.5), body_scale_ref="ear_distance",
+        category=PropCategory.FACE_WEAR, pivot_strategy="face_eyes",
+        pivot_default=(0.5, 0.35), body_scale_ref="ear_distance",
         prop_scale_ref="width", scale_multiplier=1.3,
         rotation_mode="head_tilt", auto_orient="wide_top", z_index=1),
     PropCategory.BODY_WEAR: AttachmentProfile(

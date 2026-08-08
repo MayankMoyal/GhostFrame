@@ -123,6 +123,7 @@ class PropManager:
         elif strategy == "bottom_center": return PropManager._pivot_bottom_center(rgba)
         elif strategy == "top_center": return PropManager._pivot_top_center(rgba)
         elif strategy == "center": return PropManager._pivot_center(rgba)
+        elif strategy == "face_eyes": return (0.5, 0.35)
         return profile.pivot_default
 
     @staticmethod

@@ -16,7 +16,7 @@ def process_prop_image(image_path: str, anchor_type: str) -> Tuple[float, float]
     # Category-specific pivots that match the local engine's prop_config.py
     _PIVOTS = {
         "hand_held":  (0.5, 0.90),   # Grip near the bottom (handle of sword)
-        "face_wear":  (0.5, 0.5),    # Center (mask center on face center)
+        "face_wear":  (0.5, 0.35),   # Eye-hole level (mask eyes align with user's eyes)
         "head_wear":  (0.5, 0.95),   # Bottom center (base of hat sits on head)
         "neck_wear":  (0.5, 0.05),   # Top center (necklace hangs from neck)
         "wrist_wear": (0.5, 0.5),    # Center
