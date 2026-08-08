@@ -94,24 +94,17 @@ class PropManager:
 
     @staticmethod
     def _orient(rgba: np.ndarray, profile: AttachmentProfile) -> np.ndarray:
-        if profile.auto_orient == "vertical_handle_down":
-            return PropManager._orient_vertical_handle_down(rgba)
-        return rgba
-
-    @staticmethod
-    def _orient_vertical_handle_down(rgba: np.ndarray) -> np.ndarray:
-        h, w = rgba.shape[:2]
-        if w > h * 1.3:
-            rgba = cv2.rotate(rgba, cv2.ROTATE_90_CLOCKWISE)
-            h, w = rgba.shape[:2]
-            print("[PropManager] Auto-rotated horizontal -> vertical.")
-        alpha = rgba[:, :, 3]
-        quarter = max(1, h // 4)
-        top_w = PropManager._avg_row_width(alpha[:quarter, :])
-        bot_w = PropManager._avg_row_width(alpha[h - quarter:, :])
-        if top_w > bot_w * 1.3:
-            rgba = cv2.flip(rgba, 0)
-            print("[PropManager] Flipped so handle is at bottom.")
+        """Orientation is now handled by the AI prompt at generation time.
+        
+        Previous heuristic approaches (PCA rotation, width-comparison flipping)
+        were unreliable — they flipped swords upside down when the blade tip
+        was decorative, and couldn't distinguish mask forehead from chin.
+        
+        The AI Agent prompt now explicitly instructs:
+        - Swords: "handle at the very bottom, blade at the top"
+        - Masks: "forehead at top, chin at bottom"  
+        - Hats: "brim at bottom, crown at top"
+        """
         return rgba
 
     @staticmethod
@@ -134,13 +127,22 @@ class PropManager:
 
     @staticmethod
     def _pivot_handle_bottom(rgba: np.ndarray) -> Tuple[float, float]:
+        """Simple reliable pivot for hand-held props.
+        
+        The AI prompt ensures the handle is always at the bottom of the image.
+        We just need to place the grip point near the bottom center.
+        """
         h, w = rgba.shape[:2]
         alpha = rgba[:, :, 3]
-        handle_strip = alpha[int(h * 0.80):, :]
+        
+        # Find the horizontal center of the bottom 15% (the handle area)
+        handle_strip = alpha[int(h * 0.85):, :]
         col_mass = np.sum(handle_strip > 127, axis=0).astype(np.float64)
         total = np.sum(col_mass)
         pivot_x = float(np.sum(np.arange(w) * col_mass) / total) / w if total > 0 else 0.5
-        return (pivot_x, 0.85)
+        
+        # Fixed Y at 90% down — reliably on the handle
+        return (pivot_x, 0.90)
 
     @staticmethod
     def _pivot_bottom_center(rgba: np.ndarray) -> Tuple[float, float]:

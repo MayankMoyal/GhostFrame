@@ -96,7 +96,7 @@ async def broadcast_to_overlays(message: dict):
     import json
     dead = []
     payload = json.dumps(message)
-    for ws in overlay_clients:
+    for ws in list(overlay_clients):
         try:
             await ws.send_text(payload)
         except Exception:
@@ -224,7 +224,7 @@ async def health():
     return {
         "status": "ok",
         "model_loaded": pipeline is not None,
-        "service": "ghost-stream-cloud",
+        "service": "ghost-frame-cloud",
     }
 
 
@@ -283,17 +283,29 @@ async def generate(payload: GenerationRequest):
         try:
             if anchor_type != "background":
                 nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+                
+                # Apply orientation and dynamic pivot specifically for the OBS Overlay!
+                from prop_processor import process_prop_image
+                grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
+                
                 push_filename = nobg_path.name
             else:
                 push_filename = output_path.name
+                grip_x, grip_y = 0.5, 0.5
 
             await broadcast_to_overlays({
                 "type": "new_prop",
                 "filename": push_filename,
                 "anchor_type": anchor_type,
+                "metrics": metrics,
+                "agent": agent_result,
+                "grip_x": grip_x,
+                "grip_y": grip_y
             })
             await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
             print(f"[Background] rembg/push failed: {exc}")
 
     asyncio.create_task(_bg_remove_and_push())
@@ -378,14 +390,21 @@ async def generate_voice(
         try:
             if remove_bg.lower() == "true" and anchor_type != "background":
                 nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+                from prop_processor import process_prop_image
+                grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
                 push_filename = nobg_path.name
             else:
                 push_filename = output_path.name
+                grip_x, grip_y = 0.5, 0.5
 
             await broadcast_to_overlays({
                 "type": "new_prop",
                 "filename": push_filename,
                 "anchor_type": anchor_type,
+                "metrics": metrics,
+                "agent": agent_result,
+                "grip_x": grip_x,
+                "grip_y": grip_y
             })
             await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
@@ -428,13 +447,25 @@ async def upload_prop(
     # Return response IMMEDIATELY. rembg + push runs in background.
     async def _bg_remove_and_push():
         try:
-            nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+            if anchor_type != "background":
+                nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+                from prop_processor import process_prop_image
+                grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
+                push_filename = nobg_path.name
+            else:
+                push_filename = save_path.name
+                grip_x, grip_y = 0.5, 0.5
+
             await broadcast_to_overlays({
                 "type": "new_prop",
-                "filename": nobg_path.name,
+                "filename": push_filename,
                 "anchor_type": anchor_type,
+                "metrics": {"latency_seconds": 0, "peak_vram_gb": 0},
+                "agent": {"anchor_type": anchor_type, "type": "prop" if anchor_type != "background" else "background", "original_prompt": "Custom Upload"},
+                "grip_x": grip_x,
+                "grip_y": grip_y
             })
-            await push_prop_to_local_engine(nobg_path.name, anchor_type)
+            await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
             print(f"[Background] upload-prop rembg/push failed: {exc}")
 

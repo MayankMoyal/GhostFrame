@@ -1,4 +1,4 @@
-# Ghost Stream — Local Engine Dependencies
+# Ghost Frame — Local Engine Dependencies
 # Install: pip install -r requirements.txt
 
 # Core vision

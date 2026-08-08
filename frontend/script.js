@@ -355,7 +355,7 @@ micBtn.addEventListener("mouseup", stopRecording);
 micBtn.addEventListener("mouseleave", stopRecording);
 
 window.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !e.repeat && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
+    if (e.code === "Space" && !e.repeat && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT' && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         startRecording();
     }
@@ -443,7 +443,7 @@ async function checkEngineHealth() {
         const data = await resp.json();
         if (data.status === "ok") {
             engineDot.className = "status-dot online";
-            engineStatusEl.textContent = `Local Engine: 🟢 ${data.fps} FPS`;
+            engineStatusEl.textContent = `Local Engine: 🟢 ${data.fps !== undefined ? data.fps + ' FPS' : 'Online'}`;
         } else {
             engineDot.className = "status-dot starting";
             engineStatusEl.textContent = "Local Engine: 🟡 Starting...";
@@ -460,3 +460,40 @@ setInterval(updateClock, 1000);
 resetPipeline();
 checkEngineHealth();
 setInterval(checkEngineHealth, 5000);
+
+// ── WebSocket Listener (Sync with OBS Panel) ────────────────────────────
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsHost = window.location.protocol === 'file:' ? 'localhost:8000' : window.location.host;
+const dashboardWs = new WebSocket(`${wsProtocol}//${wsHost}/ws/anchor`);
+
+dashboardWs.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === "new_prop") {
+        if (data.action === 'clear') return;
+        const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
+        const prompt = data.agent?.original_prompt || "Generated via OBS Panel";
+        
+        // Update Preview & Gallery
+        setPreviewImage(imageUrl, prompt);
+        addToRecentGenerations(imageUrl, prompt);
+
+        // Update Statistics if available
+        setText("analysis", data.agent?.final_prompt || "Completed via OBS Panel");
+        setText("sceneType", `Anchor: ${data.anchor_type || "background"}`);
+        setText("imageStyle", data.agent?.style || "-");
+        setText("lighting", "Turbo guidance");
+        
+        if (data.metrics) {
+            setText("timeEstimate", `${data.metrics.latency_seconds} sec`);
+            setText("vramUsage", `${data.metrics.peak_vram_gb} GB`);
+        } else {
+            setText("timeEstimate", "Complete");
+            setText("vramUsage", "-");
+        }
+
+        setPipelineStep("step4", "Image rendered", true);
+        setPipelineStep("step5", "Sent to OBS", true);
+    }
+};
+
+dashboardWs.onerror = () => console.log("[Dashboard] WebSocket error. Stats won't sync.");

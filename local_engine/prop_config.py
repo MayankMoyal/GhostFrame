@@ -43,7 +43,7 @@ PROFILES = {
         category=PropCategory.HEAD_WEAR, pivot_strategy="bottom_center",
         pivot_default=(0.5, 0.95), body_scale_ref="ear_distance",
         prop_scale_ref="width", scale_multiplier=2.5,
-        rotation_mode="head_tilt", auto_orient="as_is", z_index=1),
+        rotation_mode="head_tilt", auto_orient="wide_bottom", z_index=1),
     PropCategory.NECK_WEAR: AttachmentProfile(
         category=PropCategory.NECK_WEAR, pivot_strategy="top_center",
         pivot_default=(0.5, 0.05), body_scale_ref="shoulder_width",
@@ -63,7 +63,7 @@ PROFILES = {
         category=PropCategory.FACE_WEAR, pivot_strategy="center",
         pivot_default=(0.5, 0.5), body_scale_ref="ear_distance",
         prop_scale_ref="width", scale_multiplier=1.3,
-        rotation_mode="head_tilt", auto_orient="as_is", z_index=1),
+        rotation_mode="head_tilt", auto_orient="wide_top", z_index=1),
     PropCategory.BODY_WEAR: AttachmentProfile(
         category=PropCategory.BODY_WEAR, pivot_strategy="top_center",
         pivot_default=(0.5, 0.05), body_scale_ref="torso_height",
@@ -104,6 +104,9 @@ def resolve_category(category_str: str) -> PropCategory:
         "ear": PropCategory.EAR_WEAR, "earring": PropCategory.EAR_WEAR,
         "face": PropCategory.FACE_WEAR, "glasses": PropCategory.FACE_WEAR,
         "body": PropCategory.BODY_WEAR, "cape": PropCategory.BODY_WEAR,
+        "right_wrist": PropCategory.WRIST_WEAR, "left_wrist": PropCategory.WRIST_WEAR,
+        "right_hand": PropCategory.HAND_HELD, "left_hand": PropCategory.HAND_HELD,
+        "right_ear": PropCategory.HEAD_WEAR, "left_ear": PropCategory.HEAD_WEAR,
     }
     return _ALIASES.get(key, PropCategory.HAND_HELD)
 

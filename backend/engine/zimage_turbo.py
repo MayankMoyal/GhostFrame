@@ -61,6 +61,44 @@ def load_pipeline():
     # The VAE must decode in float32 to prevent NaNs in the final pixels
     pipe.vae.to(torch.float32)
 
+    # ── END-TO-END INFERENCE OPTIMIZATION ─────────────────────────────────
+    #
+    # WHY torch.compile DOES NOT WORK WITH THIS PIPELINE:
+    # ZImagePipeline._encode_prompt strips padding from token embeddings:
+    #     embeddings_list.append(prompt_embeds[i][prompt_masks[i]])
+    # This produces variable-length tensors (e.g. [23, 4096] vs [47, 4096])
+    # that are passed as a Python list into the transformer. torch.compile
+    # treats each unique shape as a new graph, causing a FULL recompilation
+    # (30-60s) on every single new prompt. dynamic=True cannot help because
+    # the inputs are lists of differently-shaped tensors, not padded batches.
+    # Additionally, GGUF quantization + bitsandbytes NF4 layers use custom
+    # CUDA kernels that cause graph breaks, making fullgraph=True impossible.
+    #
+    # WHAT WE DO INSTEAD (actual measured speedups):
+    # 1. GGUF Q5_K_M quantization on transformer (already loaded above)
+    # 2. NF4 4-bit quantization on text encoder (already loaded above)  
+    # 3. BFloat16 compute dtype throughout the pipeline
+    # 4. CUDA-level hardware optimizations below:
+
+    # Enable cuDNN auto-tuner: benchmarks multiple convolution algorithms
+    # and caches the fastest one for each input size. Since our image
+    # dimensions are fixed (576x1024), this gives a permanent speedup
+    # after the first generation.
+    torch.backends.cudnn.benchmark = True
+
+    # Enable TF32 on Ampere+ GPUs: uses Tensor Cores for 32-bit ops
+    # with ~3x throughput at negligible precision loss (mantissa truncated
+    # from 23 to 10 bits, which is invisible for image generation).
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # Enable scaled_dot_product_attention (SDPA) optimizations.
+    # This is built into PyTorch 2.x and automatically selects the fastest
+    # attention backend (FlashAttention-2, Memory-Efficient, or Math).
+    torch.backends.cuda.enable_flash_sdp(True)
+    torch.backends.cuda.enable_mem_efficient_sdp(True)
+
+    print("[Optimization] Applied: GGUF Q5_K_M + NF4 + BF16 + cuDNN benchmark + TF32 + FlashSDP")
     print(f"[DIAGNOSTIC] VRAM allocated right after loading to GPU: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
 
     print("Running throwaway warmup generation...")
@@ -101,7 +139,7 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
     print("\n=== Z IMAGE TURBO BASELINE METRICS ===")
     print(f"Latency = {latency:.4f} seconds")
     print(f"Peak VRAM USE : {peak_vram_use:.4f} GB")
-    print("Image sucessfully saved")
+    print("Image successfully saved")
 
     return {
         "latency_seconds": round(latency, 4),

@@ -201,7 +201,7 @@ class UltimateTracker:
         VT = self._VIS_THRESH
         def _get(idx, fx, fy): 
             pt = lm[idx]
-            return (fx(pt.x), fy(pt.y)) if pt.visibility > VT else None
+            return (fx(pt.x), fy(pt.y)) if (pt.visibility or 0.0) > VT else None
 
         r = PoseResult()
         r.nose, r.left_eye, r.right_eye = _get(0, fb.nose_x, fb.nose_y), _get(2, fb.leye_x, fb.leye_y), _get(5, fb.reye_x, fb.reye_y)

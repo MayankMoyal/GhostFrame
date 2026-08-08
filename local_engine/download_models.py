@@ -1,4 +1,4 @@
-"""Ghost Stream — Local Engine Model Weight Downloader
+"""Ghost Frame — Local Engine Model Weight Downloader
 
 Run this script after installing dependencies to download all required
 model weights for the local vision engine.
@@ -62,7 +62,7 @@ def download_file(url: str, dest: Path, description: str) -> bool:
 
 def main():
     print("\n" + "=" * 60)
-    print("  Ghost Stream — Local Engine Model Downloader")
+    print("  Ghost Frame — Local Engine Model Downloader")
     print("=" * 60 + "\n")
     print(f"Download directory: {MODELS_DIR}\n")
 
