@@ -1,4 +1,4 @@
-"""Prop Processor — Simple, reliable orientation and pivot for the OBS overlay path."""
+"""Prop Processor — Simple, reliable pivot + face_wear orientation for the OBS overlay path."""
 import cv2
 import numpy as np
 from typing import Tuple
@@ -8,10 +8,8 @@ def process_prop_image(image_path: str, anchor_type: str) -> Tuple[float, float]
     """
     Returns (grip_x, grip_y) normalized pivot coordinates for the OBS overlay.
     
-    Does NOT attempt complex PCA rotation or heuristic flipping — those were
-    unreliable and caused swords to be grabbed by the blade and masks to appear
-    upside down. Instead, we rely on the AI Agent prompt to generate images in
-    the correct orientation, and return the appropriate fixed pivot per category.
+    For face_wear, also corrects upside-down masks/glasses using center-of-mass
+    detection and overwrites the image on disk.
     """
     # Category-specific pivots that match the local engine's prop_config.py
     _PIVOTS = {
@@ -25,5 +23,21 @@ def process_prop_image(image_path: str, anchor_type: str) -> Tuple[float, float]
         "shield":     (0.5, 0.5),    # Center
         "background": (0.5, 0.5),    # Not used, but safe default
     }
+
+    # ── FACE_WEAR: fix upside-down masks/glasses using center of mass ──
+    if anchor_type == "face_wear":
+        rgba = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        if rgba is not None and rgba.ndim >= 3 and rgba.shape[2] == 4:
+            h, w = rgba.shape[:2]
+            alpha = rgba[:, :, 3]
+            moments = cv2.moments(alpha)
+            if moments["m00"] > 0:
+                cy_ratio = (moments["m01"] / moments["m00"]) / h
+                if cy_ratio > 0.55:
+                    # Center of mass is below center → upside down → flip
+                    rgba = cv2.flip(rgba, 0)
+                    cv2.imwrite(image_path, rgba)
+                    print(f"[prop_processor] Flipped FACE_WEAR (center of mass was at {cy_ratio:.0%})")
+        return _PIVOTS["face_wear"]
     
     return _PIVOTS.get(anchor_type, (0.5, 0.5))

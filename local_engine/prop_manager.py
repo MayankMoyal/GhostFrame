@@ -94,17 +94,29 @@ class PropManager:
 
     @staticmethod
     def _orient(rgba: np.ndarray, profile: AttachmentProfile) -> np.ndarray:
-        """Orientation is now handled by the AI prompt at generation time.
+        """Correct orientation for props that the AI may generate upside down."""
+        if profile.auto_orient == "wide_top":
+            return PropManager._orient_face_wear(rgba)
+        # All other categories: trust the AI prompt orientation
+        return rgba
+
+    @staticmethod
+    def _orient_face_wear(rgba: np.ndarray) -> np.ndarray:
+        """For FACE_WEAR (masks, glasses, goggles): ensure heavier part is at the top.
         
-        Previous heuristic approaches (PCA rotation, width-comparison flipping)
-        were unreliable — they flipped swords upside down when the blade tip
-        was decorative, and couldn't distinguish mask forehead from chin.
-        
-        The AI Agent prompt now explicitly instructs:
-        - Swords: "handle at the very bottom, blade at the top"
-        - Masks: "forehead at top, chin at bottom"  
-        - Hats: "brim at bottom, crown at top"
+        Uses center of mass, which is far more reliable than width comparison.
+        On any correctly oriented mask/glasses, the center of mass is in the 
+        upper half (lenses, forehead area have more pixels than chin/nose pads).
         """
+        h, w = rgba.shape[:2]
+        alpha = rgba[:, :, 3]
+        moments = cv2.moments(alpha)
+        if moments["m00"] > 0:
+            cy_ratio = (moments["m01"] / moments["m00"]) / h
+            if cy_ratio > 0.55:
+                # Center of mass is in the lower half → image is upside down
+                rgba = cv2.flip(rgba, 0)
+                print(f"[PropManager] Flipped FACE_WEAR (center of mass was at {cy_ratio:.0%}, now corrected)")
         return rgba
 
     @staticmethod
