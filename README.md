@@ -1,14 +1,14 @@
-# Ghost Stream 🎮👻
+# Ghost Frame 🎮👻
 
 **Real-time AI-powered prop and background generation for live streamers, with body-tracking and OBS integration.**
 
-Ghost Stream lets streamers voice or type a prompt, generates an AI image in seconds, and instantly equips it as a tracked body prop (sword, shield, hat) or background in their OBS scene — all in real-time.
+Ghost Frame lets streamers voice or type a prompt, generates an AI image in seconds, and instantly equips it as a tracked body prop (sword, shield, hat) or background in their OBS scene — all in real-time.
 
 ---
 
 ## Architecture
 
-Ghost Stream runs as a **two-machine system**:
+Ghost Frame runs as a **two-machine system**:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -128,7 +128,7 @@ The local engine starts on `http://localhost:8001` with WebSocket tracking at `w
 
 ### 3. OBS Studio Setup
 
-1. **Video Feed**: Add a **Window Capture** source → select the "Ghost Stream" OpenCV window.
+1. **Video Feed**: Add a **Window Capture** source → select the "Ghost Frame" OpenCV window.
 2. **Prop Overlay**: Add a **Browser Source** → URL: `http://localhost:8000/app/overlay.html` → Set width/height to match your canvas → Check "Shutdown source when not visible".
 
 ---
