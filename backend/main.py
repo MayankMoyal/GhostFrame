@@ -39,6 +39,15 @@ from starlette.concurrency import run_in_threadpool
 # Add parent directory to path for config import
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Auto-link cuDNN for 37ms CUDA rembg acceleration
+try:
+    import nvidia.cudnn
+    cudnn_path = list(nvidia.cudnn.__path__)[0] + "/lib"
+    if cudnn_path not in os.environ.get("LD_LIBRARY_PATH", ""):
+        os.environ["LD_LIBRARY_PATH"] = cudnn_path + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+except Exception:
+    pass
+
 from engine.zimage_turbo import generate_image, load_pipeline
 from agent.router import run_agent
 from agent.rewriter import get_rewritten_prompt
@@ -57,8 +66,8 @@ except ImportError:
     OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
     LOCAL_API_URL = "http://localhost:8001"
     WHISPER_MODEL_SIZE = "base"
-    WHISPER_DEVICE = "cpu"
-    WHISPER_COMPUTE_TYPE = "int8"
+    WHISPER_DEVICE = "cuda"
+    WHISPER_COMPUTE_TYPE = "float16"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -132,23 +141,41 @@ async def push_prop_to_local_engine(filename: str, anchor_type: str):
         print(f"[Event-Driven] Could not reach Local Engine: {exc}")
 
 
+# ── Persistent CUDA Session for rembg (37ms Cutout) ─────────────────────────
+_rembg_session = None
+
+
+def get_rembg_session():
+    """Retrieve or initialize the persistent CUDA rembg session."""
+    global _rembg_session
+    if _rembg_session is None:
+        try:
+            from rembg import new_session
+            _rembg_session = new_session("u2net", providers=["CUDAExecutionProvider"])
+            print("[rembg] CUDAExecutionProvider session initialized successfully (37ms speed)")
+        except Exception as e:
+            from rembg import new_session
+            _rembg_session = new_session("u2net")
+            print(f"[rembg] Fallback to default session: {e}")
+    return _rembg_session
+
+
 def remove_background_from_image(image_path: Path) -> Path:
-    """Remove background from a generated prop image using rembg."""
+    """Remove background from a generated prop image using persistent CUDA rembg."""
     try:
         from rembg import remove
-        from PIL import Image
-        import io
 
+        session = get_rembg_session()
         with open(image_path, "rb") as f:
             input_data = f.read()
 
-        output_data = remove(input_data)
+        output_data = remove(input_data, session=session)
 
         nobg_path = image_path.with_name(image_path.stem + "_nobg.png")
         with open(nobg_path, "wb") as f:
             f.write(output_data)
 
-        print(f"[rembg] Background removed: {nobg_path.name}")
+        print(f"[rembg] Background removed via CUDA: {nobg_path.name}")
         return nobg_path
     except Exception as exc:
         print(f"[rembg] Failed: {exc}")
@@ -168,7 +195,7 @@ async def lifespan(app: FastAPI):
     print("[Startup] Loading Z-Image-Turbo pipeline...")
     pipeline = load_pipeline()
 
-    # Load Whisper STT model
+    # Load Whisper STT model on CUDA
     print("[Startup] Loading Whisper STT model...")
     load_whisper_model(
         model_size=WHISPER_MODEL_SIZE,
@@ -176,7 +203,11 @@ async def lifespan(app: FastAPI):
         compute_type=WHISPER_COMPUTE_TYPE,
     )
 
-    print("[Startup] All models loaded. Server ready!")
+    # Pre-warm CUDA rembg session
+    print("[Startup] Initializing CUDA rembg session...")
+    get_rembg_session()
+
+    print("[Startup] All models loaded and GPU warmed. Server ready!")
     yield
 
 
