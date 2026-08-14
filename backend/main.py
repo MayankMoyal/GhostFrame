@@ -306,45 +306,43 @@ async def generate(payload: GenerationRequest):
 
     anchor_type = agent_result.get("anchor_type", "background")
 
-    # ── Async background removal + push ──────────────────────────────────
-    # Return the response IMMEDIATELY with the original image.
-    # rembg runs in the background and pushes the nobg version to Local Engine
-    # when ready. This cuts ~6-8s off the perceived response time.
-    async def _bg_remove_and_push():
-        try:
-            if anchor_type != "background":
-                nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
-                
-                # Apply orientation and dynamic pivot specifically for the OBS Overlay!
-                from prop_processor import process_prop_image
-                grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
-                
-                push_filename = nobg_path.name
-            else:
-                push_filename = output_path.name
-                grip_x, grip_y = 0.5, 0.5
+    # ── Synchronous background removal (37ms on CUDA) ────────────────────
+    nobg_filename = None
+    grip_x, grip_y = 0.5, 0.5
+    if anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+        nobg_filename = nobg_path.name
 
+        # Apply orientation and dynamic pivot specifically for the OBS Overlay!
+        from prop_processor import process_prop_image
+        grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
+
+    serve_filename = nobg_filename or output_path.name
+
+    # ── Async push to OBS overlay + Local Engine ─────────────────────────
+    async def _push_to_clients():
+        try:
             await broadcast_to_overlays({
                 "type": "new_prop",
-                "filename": push_filename,
+                "filename": serve_filename,
                 "anchor_type": anchor_type,
                 "metrics": metrics,
                 "agent": agent_result,
                 "grip_x": grip_x,
                 "grip_y": grip_y
             })
-            await push_prop_to_local_engine(push_filename, anchor_type)
+            await push_prop_to_local_engine(serve_filename, anchor_type)
         except Exception as exc:
             import traceback
             traceback.print_exc()
-            print(f"[Background] rembg/push failed: {exc}")
+            print(f"[Push] OBS/Local Engine push failed: {exc}")
 
-    asyncio.create_task(_bg_remove_and_push())
+    asyncio.create_task(_push_to_clients())
 
     return {
         "status": "success",
-        "filename": output_path.name,
-        "filename_nobg": None,  # Will be ready asynchronously
+        "filename": serve_filename,
+        "filename_nobg": nobg_filename,
         "metrics": metrics,
         "agent": {
             "original_prompt": payload.prompt,
@@ -415,34 +413,35 @@ async def generate_voice(
 
     anchor_type = agent_result.get("anchor_type", "background")
 
-    # ── Async background removal + push ──────────────────────────────────
-    # Return response IMMEDIATELY. rembg + push runs in background.
-    async def _bg_remove_and_push():
-        try:
-            if remove_bg.lower() == "true" and anchor_type != "background":
-                nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
-                push_filename = nobg_path.name
-            else:
-                push_filename = output_path.name
+    # ── Synchronous background removal (37ms on CUDA) ────────────────────
+    nobg_filename = None
+    if remove_bg.lower() == "true" and anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
+        nobg_filename = nobg_path.name
 
+    serve_filename = nobg_filename or output_path.name
+
+    # ── Async push to OBS overlay + Local Engine ─────────────────────────
+    async def _push_to_clients():
+        try:
             await broadcast_to_overlays({
                 "type": "new_prop",
-                "filename": push_filename,
+                "filename": serve_filename,
                 "anchor_type": anchor_type,
                 "metrics": metrics,
                 "agent": agent_result,
             })
-            await push_prop_to_local_engine(push_filename, anchor_type)
+            await push_prop_to_local_engine(serve_filename, anchor_type)
         except Exception as exc:
-            print(f"[Background] rembg/push failed: {exc}")
+            print(f"[Push] OBS/Local Engine push failed: {exc}")
 
-    asyncio.create_task(_bg_remove_and_push())
+    asyncio.create_task(_push_to_clients())
 
     return {
         "status": "success",
         "transcript": transcript,
-        "filename": output_path.name,
-        "filename_nobg": None,  # Will be ready asynchronously
+        "filename": serve_filename,
+        "filename_nobg": nobg_filename,
         "metrics": metrics,
         "agent": {
             "original_prompt": transcript,
@@ -469,32 +468,34 @@ async def upload_prop(
     with open(save_path, "wb") as f:
         f.write(content)
 
-    # ── Async background removal + push ──────────────────────────────────
-    # Return response IMMEDIATELY. rembg + push runs in background.
-    async def _bg_remove_and_push():
-        try:
-            if anchor_type != "background":
-                nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
-                push_filename = nobg_path.name
-            else:
-                push_filename = save_path.name
+    # ── Synchronous background removal (37ms on CUDA) ────────────────────
+    nobg_filename = None
+    if anchor_type != "background":
+        nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
+        nobg_filename = nobg_path.name
 
+    serve_filename = nobg_filename or save_path.name
+
+    # ── Async push to OBS overlay + Local Engine ─────────────────────────
+    async def _push_to_clients():
+        try:
             await broadcast_to_overlays({
                 "type": "new_prop",
-                "filename": push_filename,
+                "filename": serve_filename,
                 "anchor_type": anchor_type,
                 "metrics": {"latency_seconds": 0, "peak_vram_gb": 0},
                 "agent": {"anchor_type": anchor_type, "type": "prop" if anchor_type != "background" else "background", "original_prompt": "Custom Upload"},
             })
-            await push_prop_to_local_engine(push_filename, anchor_type)
+            await push_prop_to_local_engine(serve_filename, anchor_type)
         except Exception as exc:
-            print(f"[Background] upload-prop rembg/push failed: {exc}")
+            print(f"[Push] upload-prop push failed: {exc}")
 
-    asyncio.create_task(_bg_remove_and_push())
+    asyncio.create_task(_push_to_clients())
 
     return {
         "status": "success",
-        "filename": filename,
+        "filename": serve_filename,
+        "filename_nobg": nobg_filename,
         "anchor_type": anchor_type,
     }
 
