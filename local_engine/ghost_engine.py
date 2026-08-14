@@ -5,6 +5,11 @@ import json
 import math
 import os
 import sys
+
+# Silence MediaPipe & TensorFlow Lite C++ stderr logs
+os.environ["GLOG_minloglevel"] = "2"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 import threading
 import time
 import traceback

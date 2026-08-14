@@ -96,8 +96,8 @@ class _HandFilterBank:
         self.idx_y   = OneEuroFilter(0.5, min_cutoff=mc, beta=b)
         self.pinky_x = OneEuroFilter(0.5, min_cutoff=mc, beta=b)
         self.pinky_y = OneEuroFilter(0.5, min_cutoff=mc, beta=b)
-        self.angle_sin = OneEuroFilter(0.0, min_cutoff=0.2, beta=0.3)
-        self.angle_cos = OneEuroFilter(1.0, min_cutoff=0.2, beta=0.3)
+        self.angle_sin = OneEuroFilter(0.0, min_cutoff=0.5, beta=2.5)
+        self.angle_cos = OneEuroFilter(1.0, min_cutoff=0.5, beta=2.5)
         self.last_update = time.time()
 
 class _PoseFilterBank:
@@ -117,8 +117,8 @@ class _PoseFilterBank:
         self.rwri_x, self.rwri_y   = _p(), _p()
         self.lhip_x, self.lhip_y   = _p(), _p()
         self.rhip_x, self.rhip_y   = _p(), _p()
-        self.head_angle     = OneEuroFilter(0.0, min_cutoff=0.3, beta=0.5)
-        self.shoulder_angle = OneEuroFilter(0.0, min_cutoff=0.3, beta=0.5)
+        self.head_angle     = OneEuroFilter(0.0, min_cutoff=0.5, beta=2.5)
+        self.shoulder_angle = OneEuroFilter(0.0, min_cutoff=0.5, beta=2.5)
 
 class UltimateTracker:
     _VIS_THRESH = 0.3

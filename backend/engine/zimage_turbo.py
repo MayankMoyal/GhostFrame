@@ -27,6 +27,20 @@ def load_pipeline():
     # Float32 VAE to prevent NaNs / black images
     pipe.vae.to(torch.float32)
 
+    print("Applying memory optimizations...")
+    # Slicing reduces memory pressure for the VAE without sacrificing quality
+    pipe.enable_vae_slicing()
+    # Skipping model CPU offload to keep weights on GPU 100% of the time for maximum speed.
+    
+    # Force memory layout to channels_last for faster convolution operations on Tensor Cores
+    pipe.unet.to(memory_format=torch.channels_last) if hasattr(pipe, 'unet') else None
+    if hasattr(pipe, 'transformer'):
+        pipe.transformer.to(memory_format=torch.channels_last)
+    pipe.vae.to(memory_format=torch.channels_last)
+
+    # Note: torch.compile removed due to dynamic shape recompilation overhead (45s latency spikes on prompt changes).
+    # Z-Image-Turbo will rely on native SDPA / Flash Attention and channels_last for optimization.
+
     print(f"[DIAGNOSTIC] VRAM allocated: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
 
     print("Running throwaway warmup generation...")
@@ -34,7 +48,7 @@ def load_pipeline():
         prompt="a simple black square",
         height=576,
         width=1024,
-        num_inference_steps=6,
+        num_inference_steps=8, # Model is optimized for exactly 8 steps
         guidance_scale=0.0,
     )
 
@@ -52,7 +66,7 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
         prompt=prompt,
         height=576,
         width=1024,
-        num_inference_steps=9,
+        num_inference_steps=8, # Model is optimized for exactly 8 steps
         guidance_scale=0.0,
     ).images[0]
 

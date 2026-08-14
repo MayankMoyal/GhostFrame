@@ -73,7 +73,7 @@ def transcribe_audio(audio_path: Path) -> str:
         raise RuntimeError("Whisper model not loaded. Call load_whisper_model() first.")
 
     start_time = time.time()
-    segments, info = _model.transcribe(str(audio_path), beam_size=1, language="en", vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))
+    segments, info = _model.transcribe(str(audio_path), beam_size=1, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))
     transcript = " ".join(seg.text.strip() for seg in segments).strip()
     end_time = time.time()
     

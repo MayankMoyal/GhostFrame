@@ -268,7 +268,6 @@ def render_prop(display, pdata, track, mirror, w, h, debug):
             raw_scale = (body_px / prop_px) * profile.scale_multiplier
             
             # --- DYNAMIC SAFETY CLAMP ---
-            # Calculate the max scale allowed so the prop never cuts off the screen
             ph, pw = meta.image.shape[:2]
             max_scale_h = (h * 0.75) / ph
             max_scale_w = (w * 0.60) / pw

@@ -25,7 +25,7 @@ class BackgroundRemover:
         self.model.to(self.device).eval()
         
         self.rec = [None] * 4  
-        self.downsample_ratio = 0.5 if self.device.type == 'cuda' else 0.25
+        self.downsample_ratio = 0.5
 
     def remove(self, frame_bgr, background_bgr):
         h, w = frame_bgr.shape[:2]
@@ -38,6 +38,7 @@ class BackgroundRemover:
             fgr, pha, *self.rec = self.model(src, *self.rec, self.downsample_ratio)
         
         alpha = pha[0, 0].cpu().numpy()[..., None]
+        
         fgr_np = fgr[0].permute(1, 2, 0).cpu().numpy()
         fgr_np = (fgr_np * 255.0).astype(np.float32)
         fgr_bgr = cv2.cvtColor(fgr_np, cv2.COLOR_RGB2BGR)
