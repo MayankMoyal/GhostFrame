@@ -55,9 +55,9 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "command-r7b")
 
 # Whisper STT
-WHISPER_MODEL_SIZE = os.environ.get("GHOST_WHISPER_MODEL", "medium")
-WHISPER_DEVICE = os.environ.get("GHOST_WHISPER_DEVICE", "cuda")
-WHISPER_COMPUTE_TYPE = os.environ.get("GHOST_WHISPER_COMPUTE", "float16")
+WHISPER_MODEL_SIZE = os.environ.get("GHOST_WHISPER_MODEL", "base")
+WHISPER_DEVICE = os.environ.get("GHOST_WHISPER_DEVICE", "cpu")
+WHISPER_COMPUTE_TYPE = os.environ.get("GHOST_WHISPER_COMPUTE", "int8")
 
 # ── Heartbeat Settings ─────────────────────────────────────────────────────
 HEARTBEAT_INTERVAL_SECONDS = 5

@@ -66,9 +66,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 pipeline = None
 pipeline_lock = Lock()
 
-# ── rembg GPU Session (pre-initialized at startup) ───────────────────────
-rembg_session = None
-
 # ── WebSocket Connections ─────────────────────────────────────────────────
 # All connected OBS overlay clients
 overlay_clients: list[WebSocket] = []
@@ -136,14 +133,16 @@ async def push_prop_to_local_engine(filename: str, anchor_type: str):
 
 
 def remove_background_from_image(image_path: Path) -> Path:
-    """Remove background from a generated prop image using rembg (GPU-accelerated)."""
+    """Remove background from a generated prop image using rembg."""
     try:
         from rembg import remove
+        from PIL import Image
+        import io
 
         with open(image_path, "rb") as f:
             input_data = f.read()
 
-        output_data = remove(input_data, session=rembg_session)
+        output_data = remove(input_data)
 
         nobg_path = image_path.with_name(image_path.stem + "_nobg.png")
         with open(nobg_path, "wb") as f:
@@ -163,7 +162,7 @@ CLOUD_API_URL = f"http://localhost:{CLOUD_PORT}"
 # ── App Lifespan ──────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pipeline, rembg_session
+    global pipeline
 
     # Load Z-Image-Turbo pipeline
     print("[Startup] Loading Z-Image-Turbo pipeline...")
@@ -176,24 +175,6 @@ async def lifespan(app: FastAPI):
         device=WHISPER_DEVICE,
         compute_type=WHISPER_COMPUTE_TYPE,
     )
-
-    # Pre-initialize rembg with GPU session (eliminates cold-start penalty)
-    print("[Startup] Loading rembg U²-Net on GPU...")
-    from rembg import new_session, remove
-    try:
-        rembg_session = new_session("u2net", providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
-        # Warmup: run a dummy removal to fully initialize ONNX/CUDA kernels
-        dummy_img = (Path(__file__).parent.parent / "outputs")
-        dummy_img.mkdir(parents=True, exist_ok=True)
-        from PIL import Image
-        import io
-        buf = io.BytesIO()
-        Image.new("RGB", (64, 64), color=(128, 128, 128)).save(buf, format="PNG")
-        remove(buf.getvalue(), session=rembg_session)
-        print("[Startup] rembg GPU session ready (warmup complete)")
-    except Exception as exc:
-        print(f"[Startup] rembg GPU init failed, falling back to CPU: {exc}")
-        rembg_session = None
 
     print("[Startup] All models loaded. Server ready!")
     yield
