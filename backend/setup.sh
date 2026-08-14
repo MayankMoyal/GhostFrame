@@ -56,28 +56,23 @@ else
 fi
 
 # ── 6. Start Ollama & Pull Agent Model ─────────────────────
-echo "=== [6/7] Pull Agent Model (Qwen3 4B) ==="
-# Ollama speed optimizations for A6000
-export OLLAMA_FLASH_ATTENTION=1      # Flash Attention for faster inference
-export OLLAMA_KEEP_ALIVE=-1          # Never unload model from VRAM
-export OLLAMA_NUM_PARALLEL=1         # Single-user, avoid scheduling overhead
-
+echo "=== [6/7] Pull Agent Model (Command-R 7B) ==="
 # Start Ollama server in background if not already running
 if ! pgrep -x "ollama" > /dev/null; then
-    OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 ollama serve > /tmp/ollama.log 2>&1 &
+    ollama serve > /tmp/ollama.log 2>&1 &
     sleep 3
-    echo "    ✓ Ollama server started (Flash Attention enabled)"
+    echo "    ✓ Ollama server started"
 else
     echo "    ✓ Ollama server already running"
 fi
 
-# Pull Qwen3 4B (fast agent model — Q4_K_M default)
-if ollama list | grep -q "qwen3:4b"; then
-    echo "    ✓ qwen3:4b already pulled"
+# Pull Command-R 7B (the active agent model)
+if ollama list | grep -q "command-r7b"; then
+    echo "    ✓ command-r7b already pulled"
 else
-    echo "    Pulling qwen3:4b (~2.5GB)..."
-    ollama pull qwen3:4b
-    echo "    ✓ qwen3:4b ready"
+    echo "    Pulling command-r7b (~4.5GB)..."
+    ollama pull command-r7b
+    echo "    ✓ command-r7b ready"
 fi
 
 # ── 7. Verify Setup ───────────────────────────────────────
@@ -87,11 +82,11 @@ python3 -c "import fastapi; print(f'    FastAPI {fastapi.__version__}')"
 python3 -c "import diffusers; print(f'    Diffusers {diffusers.__version__}')"
 ollama list | head -5
 
-# ── Warmup: Pre-load Qwen3 4B into VRAM ──────────────────────────
+# ── Warmup: Pre-load Command-R 7B into VRAM ──────────────────────────
 echo ""
-echo "=== Warming up Ollama (pre-loading qwen3:4b into VRAM)... ==="
-curl -s http://localhost:11434/api/generate -d '{"model": "qwen3:4b", "prompt": "test", "stream": false}' > /dev/null 2>&1
-echo "    ✓ qwen3:4b loaded into VRAM"
+echo "=== Warming up Ollama (pre-loading command-r7b into VRAM)... ==="
+curl -s http://localhost:11434/api/generate -d '{"model": "command-r7b", "prompt": "test", "stream": false}' > /dev/null 2>&1
+echo "    ✓ command-r7b loaded into VRAM"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════╗"
@@ -103,6 +98,6 @@ echo "║                                                      ║"
 echo "║  Dashboard:  http://localhost:8000/app/               ║"
 echo "║  Panel:      http://localhost:8000/app/panel.html     ║"
 echo "║                                                      ║"
-echo "║  Agent model: Qwen3 4B (qwen3:4b)                    ║"
+echo "║  Agent model: Command-R 7B (command-r7b)             ║"
 echo "║  Image model: Z-Image-Turbo Q5_K_M                   ║"
 echo "╚══════════════════════════════════════════════════════╝"

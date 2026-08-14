@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Ghost Frame — OBS Overlay Engine + Game Bar Panel
+// Ghost Stream — OBS Overlay Engine + Game Bar Panel
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // This file handles:
@@ -52,22 +52,22 @@ const ZONE_SCALE = {
 };
 
 const ZONE_GRIP = {
-    "right_wrist":     0.90,
-    "left_wrist":      0.90,
-    "prop_in_hand":    0.90,
-    "hand_held":       0.90,
-    "shield":          0.50,
+    "right_wrist":     0.85,
+    "left_wrist":      0.85,
+    "prop_in_hand":    0.85,
+    "hand_held":       0.85,
+    "shield":          0.85,
     "both_wrists":     0.5,
-    "wrist_wear":      0.50,
-    "head":            0.95,
-    "head_wear":       0.95,
-    "neck_wear":       0.05,
-    "ear_wear":        0.05,
-    "face_wear":       0.35,
+    "wrist_wear":      0.85,
+    "head":            0.9,
+    "head_wear":       0.9,
+    "neck_wear":       0.7,
+    "ear_wear":        0.9,
+    "face_wear":       0.9,
     "left_shoulder":   0.5,
     "right_shoulder":  0.5,
     "both_shoulders":  0.5,
-    "body_wear":       0.05,
+    "body_wear":       0.5,
     "ambient":         0.5,
     "background":      0.5,
 };
@@ -197,6 +197,7 @@ function handleNewProp(data) {
         bgImg.style.display   = "none"; // Local engine handles BG with RVM
     } else {
         bgImg.style.display = "none";
+        propImg.src = currentProp.url;
         propImg.onload = () => {
             imgWidth  = propImg.naturalWidth;
             imgHeight = propImg.naturalHeight;
@@ -205,7 +206,6 @@ function handleNewProp(data) {
             const startY = (window.innerHeight - imgHeight) / 2;
             propImg.style.transform = `translate(${startX}px, ${startY}px)`;
         };
-        propImg.src = currentProp.url;
     }
 
     // Update last generated preview in panel
@@ -250,8 +250,8 @@ function updatePropPosition(payload) {
     const gripDy = (gripYRatio - 0.5) * newH;
 
     const rad = angle * (Math.PI / 180);
-    const rotatedGripX = gripDx * Math.cos(rad) - gripDy * Math.sin(rad);
-    const rotatedGripY = gripDx * Math.sin(rad) + gripDy * Math.cos(rad);
+    const rotatedGripX =  gripDx * Math.cos(rad) + gripDy * Math.sin(rad);
+    const rotatedGripY = -gripDx * Math.sin(rad) + gripDy * Math.cos(rad);
 
     const finalX = cx - rotatedGripX;
     const finalY = cy - rotatedGripY;

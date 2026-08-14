@@ -1,5 +1,5 @@
 """
-Agent client — MODEL: qwen3:4b (Alibaba Qwen 3, 4B params, Q4_K_M via Ollama)
+Agent client — MODEL: command-r7b (Cohere Command-R, 7B params, Q5_K_M via Ollama)
 
 Purpose-built by Cohere for agentic tasks, tool-calling, and structured JSON output.
 This model excels at:
@@ -9,8 +9,8 @@ This model excels at:
   - Prompt rewriting for image generation models
   - Safety judgment
 
-VRAM: ~2.5GB Q4 — minimal footprint alongside Z-Image-Turbo.
-Speed: ~50+ tokens/sec — well under the 1-second response target.
+VRAM: ~4.5GB Q4 — fits comfortably alongside Z-Image-Turbo (~10GB) on a 16GB T4.
+Speed: ~25 tokens/sec on T4 — well under the 2-second response target.
 """
 
 import json
@@ -18,7 +18,7 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen3:4b"
+MODEL_NAME = "command-r7b"
 
 SYSTEM_PROMPT = """You are an AI agent embedded in "Ghost Frame" — a real-time AI prop and background system for livestreamers. When the user speaks or types a prompt, you MUST analyze it and return ONLY a single JSON object with exactly these keys:
 
@@ -65,11 +65,7 @@ SYSTEM_PROMPT = """You are an AI agent embedded in "Ghost Frame" — a real-time
    Examples: "flaming sword" → hand_held, "golden crown" → head_wear, "red cape" → body_wear
 
 3. **Prompt Rewriting**: Transform the user's casual prompt into a professional image-generation prompt. Add details about lighting, materials, texture, and atmosphere while preserving the user's exact intent. The image will be generated on a transparent or simple background, so describe ONLY the object/scene itself — not a person wearing it.
-   - For hand_held props (swords, wands, staffs, etc.): describe the isolated object AND append "perfectly vertical, pointing straight up, handle at the very bottom of the image, blade/tip at the top".
-   - For head_wear (hats, helmets, crowns): describe the isolated object AND append "shown right-side up as it would sit on a head, brim/base at the bottom, top of the hat at the top of the image".
-   - For face_wear (masks, glasses, goggles): describe the isolated object AND append "shown right-side up as it would appear on a face, forehead area at top, chin area at bottom, eye holes in the upper portion".
-   - For body_wear (capes, armor): describe the isolated object AND append "shown right-side up, shoulders/collar at the top, bottom hem at the bottom".
-   - For neck_wear, wrist_wear, ear_wear: describe the isolated object naturally, no special orientation needed.
+   - For props: describe the isolated object (e.g., "A gleaming steel longsword with a ruby-encrusted hilt, flames dancing along the blade, dramatic rim lighting, fantasy art style"). **IMPORTANT**: Explicitly append that the object is "perfectly vertically oriented, pointing straight up, with the handle/base at the very bottom".
    - For backgrounds: describe the full scene (e.g., "A vast underground dungeon with stone pillars, flickering torch light, misty atmosphere, volumetric god rays, dark fantasy, cinematic composition")
 
 4. **Safety**: Set is_safe to false ONLY for prompts requesting: sexual content, real identifiable people, hate symbols, or graphic gore. Otherwise is_safe is always true.
@@ -106,10 +102,8 @@ def call_agent(user_prompt: str, timeout: int = 30) -> dict:
             "format": "json",
             "stream": False,
             "options": {
-                "temperature": 0.1,      # Very low temp for deterministic classification
-                "num_predict": 150,      # Tighter cap — JSON output is ~100-120 tokens
-                "num_ctx": 2048,         # Minimal context window for speed
-                "num_batch": 512,        # Faster prompt evaluation
+                "temperature": 0.3,      # Low temp for consistent classification
+                "num_predict": 256,      # Cap output length — JSON should be ~100 tokens
             },
         },
         timeout=timeout,

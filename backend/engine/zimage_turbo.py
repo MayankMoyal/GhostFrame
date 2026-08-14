@@ -4,7 +4,7 @@ from time import time
 
 import torch
 from diffusers import ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig
-from transformers import AutoModel
+from transformers import AutoModel, BitsAndBytesConfig as TransformersBitsAndBytesConfig
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,13 +23,18 @@ def load_pipeline():
             f"Download it first with:  bash setup.sh"
         )
 
-    print("Loading text encoder (Qwen3-4B) in FP16 (A6000 48GB — no quantization needed)...")
-    # FP16 is faster than NF4 on high-VRAM GPUs: no dequantization overhead,
-    # and the A6000's 768 GB/s memory bandwidth handles it easily.
+    print("Loading text encoder (Qwen3-4B) in 4-bit (NF4)...")
+    # NF4 4-bit is faster and more stable than INT8. Using bfloat16 compute dtype.
+    text_encoder_quant_config = TransformersBitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4"
+    )
     text_encoder = AutoModel.from_pretrained(
         "Tongyi-MAI/Z-Image-Turbo",
         subfolder="text_encoder",
-        torch_dtype=torch.float16,
+        quantization_config=text_encoder_quant_config,
+        torch_dtype=torch.bfloat16,
     )
 
     print(f"Loading Z-Image-Turbo GGUF transformer from {gguf_path}...")
@@ -56,44 +61,6 @@ def load_pipeline():
     # The VAE must decode in float32 to prevent NaNs in the final pixels
     pipe.vae.to(torch.float32)
 
-    # ── END-TO-END INFERENCE OPTIMIZATION ─────────────────────────────────
-    #
-    # WHY torch.compile DOES NOT WORK WITH THIS PIPELINE:
-    # ZImagePipeline._encode_prompt strips padding from token embeddings:
-    #     embeddings_list.append(prompt_embeds[i][prompt_masks[i]])
-    # This produces variable-length tensors (e.g. [23, 4096] vs [47, 4096])
-    # that are passed as a Python list into the transformer. torch.compile
-    # treats each unique shape as a new graph, causing a FULL recompilation
-    # (30-60s) on every single new prompt. dynamic=True cannot help because
-    # the inputs are lists of differently-shaped tensors, not padded batches.
-    # Additionally, GGUF quantization + bitsandbytes NF4 layers use custom
-    # CUDA kernels that cause graph breaks, making fullgraph=True impossible.
-    #
-    # WHAT WE DO INSTEAD (actual measured speedups):
-    # 1. GGUF Q5_K_M quantization on transformer (already loaded above)
-    # 2. NF4 4-bit quantization on text encoder (already loaded above)  
-    # 3. BFloat16 compute dtype throughout the pipeline
-    # 4. CUDA-level hardware optimizations below:
-
-    # Enable cuDNN auto-tuner: benchmarks multiple convolution algorithms
-    # and caches the fastest one for each input size. Since our image
-    # dimensions are fixed (576x1024), this gives a permanent speedup
-    # after the first generation.
-    torch.backends.cudnn.benchmark = True
-
-    # Enable TF32 on Ampere+ GPUs: uses Tensor Cores for 32-bit ops
-    # with ~3x throughput at negligible precision loss (mantissa truncated
-    # from 23 to 10 bits, which is invisible for image generation).
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-
-    # Enable scaled_dot_product_attention (SDPA) optimizations.
-    # This is built into PyTorch 2.x and automatically selects the fastest
-    # attention backend (FlashAttention-2, Memory-Efficient, or Math).
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_mem_efficient_sdp(True)
-
-    print("[Optimization] Applied: GGUF Q5_K_M + NF4 + BF16 + cuDNN benchmark + TF32 + FlashSDP")
     print(f"[DIAGNOSTIC] VRAM allocated right after loading to GPU: {torch.cuda.memory_allocated() / (1024**3):.2f} GB")
 
     print("Running throwaway warmup generation...")
@@ -119,7 +86,7 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
         prompt=prompt,
         height=576,
         width=1024,
-        num_inference_steps=6,
+        num_inference_steps=9,
         guidance_scale=0.0,
     ).images[0]
 

@@ -131,16 +131,13 @@ def _anchor_hand_held(track, meta, mirror, w, h):
     return _to_px(hand.palm, mirror, w, h)
 
 def _anchor_shield(track, meta, mirror, w, h):
-    # Use the hand palm (fist) for shield placement, not the forearm midpoint
-    side = meta.target_side if meta.target_side != "any" else "left"
-    hand = _select_hand(track.hands, side)
-    if hand is not None and hand.confidence >= 0.3:
-        return _to_px(hand.palm, mirror, w, h)
-    # Fallback to pose wrist if hand tracking unavailable
     pose = track.pose
     if pose is None: return None
+    side = meta.target_side if meta.target_side != "any" else "left"
     wrist = pose.left_wrist_pose if side == "left" else pose.right_wrist_pose
-    return _to_px(wrist, mirror, w, h) if wrist else None
+    elbow = pose.left_elbow if side == "left" else pose.right_elbow
+    if wrist is None or elbow is None: return None
+    return _to_px(((wrist[0] + elbow[0]) / 2, (wrist[1] + elbow[1]) / 2), mirror, w, h)
 
 def _anchor_head_wear(track, meta, mirror, w, h):
     pose = track.pose

@@ -355,7 +355,7 @@ micBtn.addEventListener("mouseup", stopRecording);
 micBtn.addEventListener("mouseleave", stopRecording);
 
 window.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !e.repeat && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT' && document.activeElement.tagName !== 'INPUT') {
+    if (e.code === "Space" && !e.repeat && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
         e.preventDefault();
         startRecording();
     }
@@ -469,7 +469,6 @@ const dashboardWs = new WebSocket(`${wsProtocol}//${wsHost}/ws/anchor`);
 dashboardWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === "new_prop") {
-        if (data.action === 'clear') return;
         const imageUrl = `${BACKEND_BASE_URL}/outputs/${data.filename}`;
         const prompt = data.agent?.original_prompt || "Generated via OBS Panel";
         

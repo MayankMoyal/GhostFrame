@@ -9,7 +9,7 @@
 
 ```
 ┌──────────────────────────────┐    SSH Tunnel :8000    ┌──────────────────────────────┐
-│       YOUR LAPTOP            │◄══════════════════════►│    CLOUD GPU (gpu27)         │
+│       YOUR LAPTOP            │◄══════════════════════►│    CLUB GPU (gpu26)          │
 │                              │                        │                              │
 │  Local Engine (:8001)        │                        │  Backend (:8000)             │
 │  ├─ Webcam + MediaPipe       │                        │  ├─ Z-Image-Turbo (GGUF)     │
@@ -29,12 +29,12 @@
 
 SSH into the GPU:
 ```bash
-ssh gpu27@10.214.4.236 -p 22015
+ssh gpu26@10.214.4.236 -p 22013
 ```
 
 Upload the project (from your laptop, if first time):
 ```powershell
-scp -P 22015 -r "C:\Users\Mayank Moyal\Desktop\Ghost Frame" gpu27@10.214.4.236:~/GhostFrame/
+scp -P 22013 -r "C:\Users\Mayank Moyal\Desktop\Ghost Frame" gpu26@10.214.4.236:~/GhostFrame/
 ```
 
 Run setup (installs everything — PyTorch, Ollama, models, ~15 min):
@@ -49,7 +49,7 @@ bash setup.sh
 
 SSH into the GPU:
 ```bash
-ssh gpu27@10.214.4.236 -p 22015
+ssh gpu26@10.214.4.236 -p 22013
 ```
 
 Start the server inside tmux (survives disconnects):
@@ -72,7 +72,7 @@ Wait for: `[Startup] All models loaded. Server ready!` (~2-3 min)
 
 Open a **new terminal** on your laptop and keep it running:
 ```powershell
-ssh -L 8000:localhost:8000 gpu27@10.214.4.236 -p 22015
+ssh -L 8000:localhost:8000 gpu26@10.214.4.236 -p 22013
 ```
 
 Test: Open http://localhost:8000/health in your browser.
@@ -109,7 +109,7 @@ python ghost_engine.py
 
 ### GPU side:
 ```bash
-ssh gpu27@10.214.4.236 -p 22015
+ssh gpu26@10.214.4.236 -p 22013
 tmux attach -t ghostframe          # reconnect to running server
 nvidia-smi                          # check VRAM
 curl localhost:8000/health          # health check
@@ -118,7 +118,7 @@ curl localhost:8000/health          # health check
 ### Laptop side:
 ```powershell
 # Terminal 1 — SSH tunnel (keep open):
-ssh -L 8000:localhost:8000 gpu27@10.214.4.236 -p 22015
+ssh -L 8000:localhost:8000 gpu26@10.214.4.236 -p 22013
 
 # Terminal 2 — Local engine:
 cd "C:\Users\Mayank Moyal\Desktop\Ghost Frame\local_engine"

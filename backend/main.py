@@ -96,7 +96,7 @@ async def broadcast_to_overlays(message: dict):
     import json
     dead = []
     payload = json.dumps(message)
-    for ws in list(overlay_clients):
+    for ws in overlay_clients:
         try:
             await ws.send_text(payload)
         except Exception:
@@ -224,7 +224,7 @@ async def health():
     return {
         "status": "ok",
         "model_loaded": pipeline is not None,
-        "service": "ghost-frame-cloud",
+        "service": "ghost-stream-cloud",
     }
 
 
@@ -390,12 +390,9 @@ async def generate_voice(
         try:
             if remove_bg.lower() == "true" and anchor_type != "background":
                 nobg_path = await run_in_threadpool(remove_background_from_image, output_path)
-                from prop_processor import process_prop_image
-                grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
                 push_filename = nobg_path.name
             else:
                 push_filename = output_path.name
-                grip_x, grip_y = 0.5, 0.5
 
             await broadcast_to_overlays({
                 "type": "new_prop",
@@ -403,8 +400,6 @@ async def generate_voice(
                 "anchor_type": anchor_type,
                 "metrics": metrics,
                 "agent": agent_result,
-                "grip_x": grip_x,
-                "grip_y": grip_y
             })
             await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
@@ -449,12 +444,9 @@ async def upload_prop(
         try:
             if anchor_type != "background":
                 nobg_path = await run_in_threadpool(remove_background_from_image, save_path)
-                from prop_processor import process_prop_image
-                grip_x, grip_y = await run_in_threadpool(process_prop_image, str(nobg_path), anchor_type)
                 push_filename = nobg_path.name
             else:
                 push_filename = save_path.name
-                grip_x, grip_y = 0.5, 0.5
 
             await broadcast_to_overlays({
                 "type": "new_prop",
@@ -462,8 +454,6 @@ async def upload_prop(
                 "anchor_type": anchor_type,
                 "metrics": {"latency_seconds": 0, "peak_vram_gb": 0},
                 "agent": {"anchor_type": anchor_type, "type": "prop" if anchor_type != "background" else "background", "original_prompt": "Custom Upload"},
-                "grip_x": grip_x,
-                "grip_y": grip_y
             })
             await push_prop_to_local_engine(push_filename, anchor_type)
         except Exception as exc:
