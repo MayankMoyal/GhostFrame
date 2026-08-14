@@ -19,8 +19,8 @@ _model: WhisperModel | None = None
 
 def load_whisper_model(
     model_size: str = "base",
-    device: str = "cpu",
-    compute_type: str = "int8",
+    device: str = "cuda",
+    compute_type: str = "float16",
 ) -> WhisperModel:
     """Load the Whisper model into memory.
 
