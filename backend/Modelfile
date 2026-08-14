@@ -2,7 +2,7 @@ FROM command-r7b
 
 # Runtime acceleration parameters
 PARAMETER temperature 0.2
-PARAMETER num_predict 90
+PARAMETER num_predict 130
 PARAMETER num_gpu 99
 
 # Baked-in system prompt with optimized key ordering
