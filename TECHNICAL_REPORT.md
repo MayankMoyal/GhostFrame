@@ -74,7 +74,7 @@
 
 | Component | Technology | Why This Choice |
 |-----------|-----------|-----------------|
-| **Image Generation** | Z-Image-Turbo (Diffusion, GGUF Q5_K_M) | 4-step inference = fast (~4s). GGUF quantization saves 40% VRAM vs FP16 |
+| **Image Generation** | Z-Image-Turbo (Diffusion, GGUF Q5_K_M) | 9-step inference = fast (~4s). GGUF quantization saves 40% VRAM vs FP16 |
 | **Text Encoder** | Qwen3-4B (NF4 4-bit) | Small but powerful encoder for prompt understanding |
 | **Agent/Classifier** | Command-R 7B via Ollama | Purpose-built for agentic JSON tasks. Classifies prop type, anchor point, and rewrites prompts |
 | **Speech-to-Text** | Faster-Whisper (CTranslate2) | 10x faster than OpenAI Whisper, runs on CPU |

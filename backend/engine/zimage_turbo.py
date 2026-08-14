@@ -4,7 +4,7 @@ from time import time
 
 import torch
 from diffusers import ZImagePipeline, ZImageTransformer2DModel, GGUFQuantizationConfig
-from transformers import AutoModel, BitsAndBytesConfig as TransformersBitsAndBytesConfig
+from transformers import AutoModel
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,18 +23,13 @@ def load_pipeline():
             f"Download it first with:  bash setup.sh"
         )
 
-    print("Loading text encoder (Qwen3-4B) in 4-bit (NF4)...")
-    # NF4 4-bit is faster and more stable than INT8. Using bfloat16 compute dtype.
-    text_encoder_quant_config = TransformersBitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_quant_type="nf4"
-    )
+    print("Loading text encoder (Qwen3-4B) in FP16 (A6000 48GB — no quantization needed)...")
+    # FP16 is faster than NF4 on high-VRAM GPUs: no dequantization overhead,
+    # and the A6000's 768 GB/s memory bandwidth handles it easily.
     text_encoder = AutoModel.from_pretrained(
         "Tongyi-MAI/Z-Image-Turbo",
         subfolder="text_encoder",
-        quantization_config=text_encoder_quant_config,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.float16,
     )
 
     print(f"Loading Z-Image-Turbo GGUF transformer from {gguf_path}...")
@@ -124,7 +119,7 @@ def generate_image(pipe, prompt: str, output_path: Path) -> dict:
         prompt=prompt,
         height=576,
         width=1024,
-        num_inference_steps=9,
+        num_inference_steps=6,
         guidance_scale=0.0,
     ).images[0]
 

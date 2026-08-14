@@ -1,5 +1,5 @@
 """
-Agent client — MODEL: command-r7b (Cohere Command-R, 7B params, Q5_K_M via Ollama)
+Agent client — MODEL: qwen3:4b (Alibaba Qwen 3, 4B params, Q4_K_M via Ollama)
 
 Purpose-built by Cohere for agentic tasks, tool-calling, and structured JSON output.
 This model excels at:
@@ -9,8 +9,8 @@ This model excels at:
   - Prompt rewriting for image generation models
   - Safety judgment
 
-VRAM: ~4.5GB Q4 — fits comfortably alongside Z-Image-Turbo (~10GB) on a 16GB T4.
-Speed: ~25 tokens/sec on T4 — well under the 2-second response target.
+VRAM: ~2.5GB Q4 — minimal footprint alongside Z-Image-Turbo.
+Speed: ~50+ tokens/sec — well under the 1-second response target.
 """
 
 import json
@@ -18,7 +18,7 @@ import json
 import requests
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "command-r7b"
+MODEL_NAME = "qwen3:4b"
 
 SYSTEM_PROMPT = """You are an AI agent embedded in "Ghost Frame" — a real-time AI prop and background system for livestreamers. When the user speaks or types a prompt, you MUST analyze it and return ONLY a single JSON object with exactly these keys:
 
@@ -106,8 +106,10 @@ def call_agent(user_prompt: str, timeout: int = 30) -> dict:
             "format": "json",
             "stream": False,
             "options": {
-                "temperature": 0.3,      # Low temp for consistent classification
-                "num_predict": 256,      # Cap output length — JSON should be ~100 tokens
+                "temperature": 0.1,      # Very low temp for deterministic classification
+                "num_predict": 150,      # Tighter cap — JSON output is ~100-120 tokens
+                "num_ctx": 2048,         # Minimal context window for speed
+                "num_batch": 512,        # Faster prompt evaluation
             },
         },
         timeout=timeout,
