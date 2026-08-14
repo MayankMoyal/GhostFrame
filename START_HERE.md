@@ -72,7 +72,7 @@ Wait for: `[Startup] All models loaded. Server ready!` (~2-3 min)
 
 Open a **new terminal** on your laptop and keep it running:
 ```powershell
-ssh -L 8000:localhost:8000 gpu26@10.214.4.236 -p 22013
+ssh -L 8000:localhost:8000 gpu27@10.214.4.236 -p 22015
 ```
 
 Test: Open http://localhost:8000/health in your browser.
