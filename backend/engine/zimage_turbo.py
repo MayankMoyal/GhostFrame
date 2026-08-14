@@ -28,8 +28,6 @@ def load_pipeline():
     pipe.vae.to(torch.float32)
 
     print("Applying memory optimizations...")
-    # Slicing reduces memory pressure for the VAE without sacrificing quality
-    pipe.enable_vae_slicing()
     # Skipping model CPU offload to keep weights on GPU 100% of the time for maximum speed.
     
     # Force memory layout to channels_last for faster convolution operations on Tensor Cores
