@@ -1,23 +1,11 @@
-"""
-Agent client — MODEL: command-r7b (Cohere Command-R, 7B params, Q5_K_M via Ollama)
+FROM command-r7b
 
-Purpose-built by Cohere for agentic tasks, tool-calling, and structured JSON output.
-This model excels at:
-  - Strict JSON format compliance (no conversational filler)
-  - Intent classification (background vs prop)
-  - Granular body-part categorization for props
-  - Prompt rewriting for image generation models
-  - Safety judgment
-"""
+PARAMETER temperature 0.2
+PARAMETER num_predict 256
+PARAMETER stop "<|START_OF_TURN_TOKEN|>"
+PARAMETER stop "<|END_OF_TURN_TOKEN|>"
 
-import json
-
-import requests
-
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "ghost-agent"
-
-SYSTEM_PROMPT = """# ROLE
+SYSTEM """# ROLE
 You are the classification and prompt-rewriting engine for "Ghost Frame Expo", a real-time AI asset generation system for livestreamers.
 Analyze the user's voice transcript, classify the asset, enhance the visual prompt with vivid materials, lighting, and textures, and return EXACTLY ONE valid JSON object.
 
@@ -68,65 +56,3 @@ Transform the user's casual request into a rich, visual image-generation prompt.
 
 # SAFETY
 is_safe = false ONLY for sexual content, real identifiable people, hate symbols, or graphic gore. Otherwise is_safe = true (fantasy weapons and battle gear are completely safe). Set safety_reason to "Request is safe." or a brief reason if unsafe."""
-
-
-def call_agent(user_prompt: str, timeout: int = 30) -> dict:
-    """
-    Sends the user's prompt to the local Ollama Command-R 7B model
-    and returns the parsed JSON response as a dict.
-
-    The response contains:
-      - rewritten_prompt: enhanced prompt for image generation
-      - is_safe: safety flag
-      - safety_reason: explanation if unsafe
-      - style: visual style tag
-      - type: "background" or "prop"
-      - anchor_type: where the item attaches on the body
-      - prop_category: same as anchor_type for props, "" for backgrounds
-
-    Raises:
-      requests.RequestException on network/connection failure
-      ValueError if the model did not return valid JSON
-    """
-    full_prompt = f'User prompt: "{user_prompt}"'
-    payload = {
-        "model": MODEL_NAME,
-        "prompt": full_prompt,
-        "format": "json",
-        "stream": False,
-        "keep_alive": -1,
-        "options": {
-            "temperature": 0.2,
-            "num_predict": 256,
-        },
-    }
-    # If not using pre-baked model, attach system prompt
-    if MODEL_NAME != "ghost-agent":
-        payload["system"] = SYSTEM_PROMPT
-
-    response = requests.post(
-        OLLAMA_URL,
-        json=payload,
-        timeout=timeout,
-    )
-    response.raise_for_status()
-
-    raw_text = response.json().get("response", "")
-
-    try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Agent did not return valid JSON: {raw_text!r}") from exc
-
-    # Normalize: ensure anchor_type matches prop_category for downstream compatibility
-    if parsed.get("type") == "background":
-        parsed["anchor_type"] = "background"
-        parsed["prop_category"] = ""
-    elif parsed.get("type") == "prop":
-        # If prop_category is set but anchor_type isn't, sync them
-        if parsed.get("prop_category") and not parsed.get("anchor_type"):
-            parsed["anchor_type"] = parsed["prop_category"]
-        elif parsed.get("anchor_type") and not parsed.get("prop_category"):
-            parsed["prop_category"] = parsed["anchor_type"]
-
-    return parsed
