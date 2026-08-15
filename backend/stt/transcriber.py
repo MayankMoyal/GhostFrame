@@ -50,14 +50,28 @@ def load_whisper_model(
     return _model
 
 
-def transcribe_audio(audio_path: Path) -> str:
+DEFAULT_INITIAL_PROMPT = (
+    "Transcribe accurately in Indian English. Streamer live voice commands for props and backgrounds: "
+    "sword, katana, shield, crown, sunglasses, glasses, necklace, cape, armor, Indian flag, cyberpunk, dungeon."
+)
+
+
+def transcribe_audio(
+    audio_path: Path,
+    language: str = "en",
+    initial_prompt: str = DEFAULT_INITIAL_PROMPT,
+) -> str:
     """Transcribe an audio file to text.
 
     Parameters
     ----------
     audio_path : Path
-        Path to the audio file.  Any format FFmpeg can decode is
+        Path to the audio file. Any format FFmpeg can decode is
         accepted (WAV, MP3, WebM, OGG, etc.).
+    language : str
+        Target language code ("en" by default to prevent Devanagari script misinterpretation).
+    initial_prompt : str
+        Context priming tokens for Indian English accent and streamer vocabulary.
 
     Returns
     -------
@@ -73,7 +87,16 @@ def transcribe_audio(audio_path: Path) -> str:
         raise RuntimeError("Whisper model not loaded. Call load_whisper_model() first.")
 
     start_time = time.time()
-    segments, info = _model.transcribe(str(audio_path), beam_size=1, vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))
+    segments, info = _model.transcribe(
+        str(audio_path),
+        language=language,
+        initial_prompt=initial_prompt,
+        beam_size=3,
+        best_of=3,
+        temperature=0.0,
+        vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+    )
     transcript = " ".join(seg.text.strip() for seg in segments).strip()
     end_time = time.time()
     
